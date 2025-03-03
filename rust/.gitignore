@@ -1,0 +1,31 @@
+# Target directory for Rust binaries
+/target/
+
+# Cargo.lock file
+Cargo.lock
+
+# Build artifacts
+*.rs.bk
+
+# IDE files
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Environment variables
+.env
+
+# Other files
+*.toml
+*.md
+*.json
+*.yaml
+*.yml
+*.swp
+# Ignore backup files
+*~
+# Ignore coverage reports
+coverage/
+# End Generation Here
