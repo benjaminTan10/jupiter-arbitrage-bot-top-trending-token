@@ -8,15 +8,16 @@ use std::str::FromStr;
 use tracing::{info, warn};
 
 use crate::{
-    bot::{cache::Cache, ui::intro::show_intro},
+    bot::{cache::Cache, jupiter::JupiterClient, ui::intro::show_intro},
     utils::config::Config,
 };
 
 pub struct Setup {
     pub jupiter: JupiterClient,
-    pub token_a: Token,
-    pub token_b: Option<Token>,
+    pub rpc_client: RpcClient,
     pub wallet: Keypair,
+    pub input_token: Pubkey,
+    pub output_token: Option<Pubkey>,
 }
 
 pub async fn setup(skip_intro: bool) -> Result<Setup> {
@@ -25,46 +26,32 @@ pub async fn setup(skip_intro: bool) -> Result<Setup> {
         show_intro().await?;
     }
 
-    // Load config
-    let config = Config::load()?;
-    
-    // Setup RPC connection
-    let rpc = RpcClient::new(&config.rpc[0]);
+    // Load environment variables
+    dotenv::dotenv().ok();
+
+    // Initialize RPC client
+    let rpc_url = std::env::var("SOLANA_RPC_URL")?;
+    let rpc_client = RpcClient::new(rpc_url);
 
     // Load wallet
     let wallet = read_keypair_file(std::env::var("SOLANA_WALLET_PRIVATE_KEY")?)?;
 
     // Initialize Jupiter client
-    let jupiter = JupiterClient::new(
-        &rpc,
-        &wallet,
-        config.network.clone(),
-        config.amms_to_exclude.clone(),
-    )?;
+    let jupiter = JupiterClient::new();
 
-    // Load tokens
-    let tokens = load_tokens()?;
-    let token_a = tokens.iter()
-        .find(|t| t.address == config.token_a.address)
-        .ok_or_else(|| anyhow::anyhow!("Token A not found"))?
-        .clone();
-
-    let token_b = if config.trading_strategy != "arbitrage" {
-        Some(
-            tokens.iter()
-                .find(|t| t.address == config.token_b.address)
-                .ok_or_else(|| anyhow::anyhow!("Token B not found"))?
-                .clone()
-        )
-    } else {
-        None
-    };
+    // Load token addresses from environment
+    let input_token = Pubkey::from_str(&std::env::var("INPUT_TOKEN_ADDRESS")?)?;
+    let output_token = std::env::var("OUTPUT_TOKEN_ADDRESS")
+        .ok()
+        .map(|addr| Pubkey::from_str(&addr))
+        .transpose()?;
 
     Ok(Setup {
         jupiter,
-        token_a,
-        token_b,
+        rpc_client,
         wallet,
+        input_token,
+        output_token,
     })
 }
 
