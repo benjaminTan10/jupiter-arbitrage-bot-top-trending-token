@@ -2,7 +2,7 @@
 name = "solana-jupiter-bot-rust"
 version = "0.1.72-beta-jupv4"
 edition = "2021"
-authors = "benjamintan1013@gmail.com"
+authors = ["Benjamin Tan <benjamintan1013@gmail.com>"]
 license = "MIT"
 description = "A Rust implementation of the Solana Jupiter Bot"
 
