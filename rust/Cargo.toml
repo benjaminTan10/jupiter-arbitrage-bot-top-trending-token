@@ -17,10 +17,6 @@ solana-account-decoder = "1.17"
 jup-ag = "0.4.0"
 jupiter-swap-api-client = { git = "https://github.com/jup-ag/jupiter-swap-api-client.git" }
 
-# Override solana_rbpf version
-[patch.crates-io]
-solana_rbpf = { version = "0.8.5" }  # Use the latest compatible version
-
 # Async runtime
 tokio = { version = "1.35", features = ["full"] }
 
@@ -38,8 +34,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_qs = "0.13"
 
+# Override versions
 [patch.crates-io]
-anyhow = { version = "=1.0.0" }
+solana_rbpf = { version = "0.8.5" }  # Use the latest compatible version
+anyhow = { version = "=1.0.0" }  # Specify the version you want to use
 thiserror = "1.0"
 
 # Logging
