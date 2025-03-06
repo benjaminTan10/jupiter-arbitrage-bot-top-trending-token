@@ -34,11 +34,13 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_qs = "0.13"
 
+# Error handling
+anyhow = "=1.0.75"  # Use a specific version directly in dependencies
+thiserror = "1.0"
+
 # Override versions
 [patch.crates-io]
 solana_rbpf = { version = "0.8.5" }  # Use the latest compatible version
-anyhow = { version = "=1.0.0" }  # Specify the version you want to use
-thiserror = "1.0"
 
 # Logging
 tracing = "0.1"
