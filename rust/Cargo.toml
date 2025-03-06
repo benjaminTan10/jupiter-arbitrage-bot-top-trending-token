@@ -48,10 +48,6 @@ base64 = "0.22.0"
 bincode = "1.3"
 rust_decimal = "1.36"
 
-# Only use patches for dependencies that genuinely need to be patched
-[patch.crates-io]
-solana_rbpf = { version = "0.8.5" }
-
 # Binary target
 [[bin]]
 name = "solana-jupiter-bot"
