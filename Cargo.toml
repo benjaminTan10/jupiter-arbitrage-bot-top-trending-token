@@ -1,7 +1,0 @@
-[dependencies]
-# Other dependencies...
-jupiter-swap-api-client = { git = "https://github.com/jup-ag/jupiter-swap-api-client.git", branch = "main" } # or specify a commit hash 
-solana-sdk = "1.16" # Downgrade to a version compatible with solana_rbpf = "0.8.1"
-solana-client = "1.16"
-solana-program = "1.16"
-solana-account-decoder = "1.16" 
