@@ -5,9 +5,19 @@ const {logExit} = require("../bot/exit");
 const JSBI = require('jsbi');
 const bs58 = require("bs58");
 const {PublicKey,Connection,Keypair} = require("@solana/web3.js");
+const createTempDirectories = require('./createTempDir');
 require("dotenv").config();
 
-const createTempDir = () => !fs.existsSync("./temp") && fs.mkdirSync("./temp");
+/**
+ * Creates temp directory and necessary files
+ */
+const createTempDir = () => {
+	try {
+		createTempDirectories();
+	} catch (error) {
+		console.error('Error creating temp directory:', error);
+	}
+};
 
 const getCircularReplacer = () => {
 	const seen = new WeakSet();

@@ -13,12 +13,13 @@ var toFormat = (require('toformat'));
 var anchor = require('@project-serum/anchor');
 
 const { logExit } = require("./exit");
-const { loadConfigFile, toDecimal } = require("../utils");
+const { loadConfigFile, toDecimal, createTempDir } = require("../utils");
 const { intro, listenHotkeys } = require("./ui");
 const { setTimeout } = require("timers/promises");
 const cache = require("./cache");
 const wrapUnwrapSOL = cache.wrapUnwrapSOL;
 const { loadConfigFromEnv } = require("../utils/envConfig");
+const path = require("path");
 
 // Account balance code
 const balanceCheck = async (checkToken) => {
@@ -102,6 +103,10 @@ const setup = async () => {
 		listenHotkeys();
 		await intro();
 
+		// Initialize temp directories and files
+		console.log('Ensuring temp directories and token files exist...');
+		createTempDir();
+
 		// load config file or from environment, store it in cache
 		if (process.env.USE_ENV_CONFIG === "true") {
 			cache.config = loadConfigFromEnv();
@@ -110,24 +115,75 @@ const setup = async () => {
 		}
 
 		spinner = ora({
-			text: "Loading tokens...",
-			discardStdin: false,
-			color: "magenta",
+			text: "Loading tokens",
+			color: cache.config?.ui?.defaultColor || "cyan",
 		}).start();
 
+		// Load tokens file - with better error handling
 		try {
-			tokens = JSON.parse(fs.readFileSync("./temp/tokens.json"));
-			tokenA = tokens.find((t) => t.address === cache.config.tokenA.address);
-
-			if (cache.config.tradingStrategy !== "arbitrage")
-				tokenB = tokens.find((t) => t.address === cache.config.tokenB.address);
+			const tokensPath = path.join(process.cwd(), 'temp', 'tokens.json');
+			
+			if (!fs.existsSync(tokensPath)) {
+				spinner.warn('tokens.json not found, attempting to create from default token list');
+				
+				// Fetch from Jupiter API or use hardcoded defaults
+				const defaultTokens = {
+					"tokens": [
+						{
+							"address": "So11111111111111111111111111111111111111112",
+							"chainId": 101,
+							"decimals": 9,
+							"name": "Wrapped SOL",
+							"symbol": "SOL",
+							"logoURI": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+						},
+						{
+							"address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+							"chainId": 101,
+							"decimals": 6,
+							"name": "USD Coin",
+							"symbol": "USDC",
+							"logoURI": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+						}
+					]
+				};
+				
+				// Write the default tokens
+				fs.writeFileSync(tokensPath, JSON.stringify(defaultTokens, null, 2));
+				console.log(`Created default tokens.json at ${tokensPath}`);
+			}
+			
+			console.log(`Reading tokens from ${tokensPath}`);
+			tokens = JSON.parse(fs.readFileSync(tokensPath));
+			
+			// Log token details
+			console.log(`Loaded ${tokens.tokens?.length || 0} tokens from file`);
+			if (!tokens.tokens || tokens.tokens.length === 0) {
+				throw new Error('No tokens found in tokens.json');
+			}
 		} catch (error) {
-			spinner.text = chalk.black.bgRedBright(
-				`\n	Loading tokens failed!\n	Please run the Wizard to generate it using ${chalk.bold(
-					"`yarn start`"
-				)}\n`
-			);
-			throw error;
+			spinner.fail(`Loading tokens failed: ${error.message}`);
+			console.error('Token loading error details:', error);
+			
+			// Try to continue with config tokens directly
+			spinner.text = "Attempting to use tokens from config.json instead...";
+			
+			if (cache.config.tokenA && cache.config.tokenB) {
+				tokens = {
+					tokens: [
+						cache.config.tokenA,
+						cache.config.tokenB
+					]
+				};
+				spinner.succeed("Using tokens from config.json");
+			} else {
+				spinner.fail("Setting up failed!");
+				console.log(chalk.red(`
+				Loading tokens failed!
+				Please run the Wizard to generate it using \`yarn wizard\`
+				`));
+				throw error;
+			}
 		}
 
 		try {
