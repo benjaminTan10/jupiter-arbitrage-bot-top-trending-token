@@ -18,6 +18,7 @@ const cache = require("./cache");
 const { setup, getInitialotherAmountThreshold, checkTokenABalance } = require("./setup");
 const { printToConsole } = require("./ui/");
 const { swap, failedSwapHandler, successSwapHandler } = require("./swap");
+const { scanForArbitrageOpportunities } = require('../services/arbitrageScanner');
 
 const waitabit = async (ms) => {
 	const mySecondPromise = new Promise(function(resolve,reject){
@@ -471,6 +472,43 @@ const run = async () => {
 		cache.walletpubkeyfull = walpubkeyfull;
 		cache.walletpubkey = walpubkeyfull.slice(0,5) + '...' + walpubkeyfull.slice(walpubkeyfull.length-3);
 		//console.log(cache.walletpubkey);
+
+		// Run arbitrage scanner if enabled
+		if (process.env.ENABLE_ARB_SCANNER === 'true') {
+			console.log('Running arbitrage scanner to find opportunities...');
+			try {
+				// Use wrapped SOL as the base token for price comparison
+				const baseToken = {
+					symbol: 'SOL',
+					address: 'So11111111111111111111111111111111111111112',
+					decimals: 9
+				};
+				
+				// Get minimum profit threshold from environment or config
+				const minProfitPercent = parseFloat(process.env.MIN_PROFIT_THRESHOLD) || 
+										cache.config.minPercProfit || 
+										1.0;
+				
+				// Scan for opportunities
+				const opportunities = await scanForArbitrageOpportunities(
+					jupiter, 
+					baseToken, 
+					minProfitPercent,
+					50 // Limit to 50 tokens for reasonable performance
+				);
+				
+				// Store opportunities in cache for UI display
+				cache.arbitrageOpportunities = opportunities;
+				
+				// Allow the bot to use scan results if we're in arbitrage mode
+				if (cache.config.tradingStrategy === 'arbitrage' && opportunities.length > 0) {
+					console.log(`Found ${opportunities.length} potential trading opportunities. Will consider these in trading.`);
+				}
+			} catch (error) {
+				console.error('Error running arbitrage scanner:', error);
+				// Continue with normal bot operation even if scanner fails
+			}
+		}
 
 		if (cache.config.tradingStrategy === "pingpong") {
 			// set initial & current & last balance for tokenA
