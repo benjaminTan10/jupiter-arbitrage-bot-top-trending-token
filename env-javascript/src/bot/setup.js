@@ -20,6 +20,7 @@ const cache = require("./cache");
 const wrapUnwrapSOL = cache.wrapUnwrapSOL;
 const { loadConfigFromEnv } = require("../utils/envConfig");
 const path = require("path");
+const { findBestRpc } = require('../utils/rpcHealthCheck');
 
 // Account balance code
 const balanceCheck = async (checkToken) => {
@@ -211,66 +212,168 @@ const setup = async () => {
 		}
 
 		// Set up the RPC connection
-		const connection = new Connection(cache.config.rpc[0]);
+		let connection;
+		try {
+			console.log("Checking RPC endpoint health...");
+			const bestRpcUrl = await findBestRpc(cache.config.rpc);
+			
+			if (bestRpcUrl) {
+				connection = new Connection(bestRpcUrl, 'confirmed');
+				console.log(`Using RPC: ${bestRpcUrl}`);
+			} else {
+				// Fallback to first RPC if all health checks fail
+				console.warn("All RPC health checks failed, using first RPC as fallback");
+				connection = new Connection(cache.config.rpc[0], 'confirmed');
+			}
+		} catch (rpcError) {
+			console.error("Error checking RPC health:", rpcError);
+			connection = new Connection(cache.config.rpc[0], 'confirmed');
+		}
 
 		spinner.text = "Loading the Jupiter V4 SDK and getting ready to trade...";
 		let jupiter;
 		try {
-			// Set safer default options for Jupiter
+			// Create a complete AMM exclusion configuration
+			// This helps avoid the assertion errors in problematic AMMs
+			const ammsToExclude = {
+				'Aldrin': false,
+				'Crema': false,
+				'Cropper': true,  // exclude
+				'Cykura': true,   // exclude
+				'DeltaFi': false,
+				'GooseFX': true,  // exclude
+				'Invariant': false,
+				'Lifinity': false,
+				'Lifinity V2': false,
+				'Marinade': false,
+				'Mercurial': false,
+				'Meteora': true,  // exclude
+				'Raydium': false,
+				'Raydium CLMM': true, // exclude this problematic one
+				'Saber': false,
+				'Serum': true,    // exclude
+				'Orca': false,
+				'Step': false, 
+				'Penguin': false,
+				'Saros': false,
+				'Stepn': true,    // exclude
+				'Orca (Whirlpools)': true, // exclude this problematic one
+				'Sencha': false,
+				'Saber (Decimals)': false,
+				'Dradex': true,   // exclude
+				'Balansol': true, // exclude
+				'Openbook': false,
+				'Marco Polo': true, // exclude
+				'Oasis': false,
+				'BonkSwap': false,
+				'Phoenix': false,
+				'Symmetry': true, // exclude
+				'Unknown': true   // exclude
+			};
+
+			// First attempt with more explicit options
 			const jupiterOptions = {
 				connection: connection,
 				cluster: "mainnet-beta",
 				user: wallet,
-				// Only enable specific AMMs to avoid the Raydium CLMM error
-				ammsToExclude: ["Raydium CLMM"], // Exclude Raydium CLMM which is causing the error
+				ammsToExclude: ammsToExclude,
 				wrapUnwrapSOL: cache.config.wrapUnwrapSOL ?? true,
-				slidingTaxmanEnabled: true
+				shouldLoadSerumOpenOrders: false,
+				restrictIntermediateTokens: true,
+				// Add timeout to avoid hanging
+				timeoutInMs: 30000
 			};
 
 			// Log only relevant non-circular parts of options
-			console.log("Initializing Jupiter with options:", {
-				cluster: jupiterOptions.cluster,
-				ammsToExclude: jupiterOptions.ammsToExclude,
-				wrapUnwrapSOL: jupiterOptions.wrapUnwrapSOL,
-			});
+			console.log("Initializing Jupiter with options:");
+			console.log(`- Excluded AMMs: ${Object.keys(ammsToExclude).filter(k => ammsToExclude[k] === true).join(', ')}`);
+			console.log(`- Wrap/Unwrap SOL: ${jupiterOptions.wrapUnwrapSOL}`);
+			console.log(`- Network: ${jupiterOptions.cluster}`);
 			
+			// Add delay before initialization to avoid rate limits
+			console.log("Waiting 2 seconds before Jupiter initialization...");
+			await new Promise(resolve => setTimeout(resolve, 2000));
+			
+			// Initialize Jupiter with our options
 			jupiter = await Jupiter.load(jupiterOptions);
 			spinner.succeed("Jupiter SDK loaded successfully!");
 		} catch (error) {
 			spinner.fail(`Failed to initialize Jupiter: ${error.message}`);
 			console.error("Jupiter initialization error details:", error);
 			
-			// Try again with even more conservative settings
-			spinner.text = "Retrying Jupiter initialization with fallback settings...";
+			// Try again with a more aggressive approach
+			spinner.text = "Retrying Jupiter initialization with strict settings...";
 			try {
+				// Wait before retrying
+				await new Promise(resolve => setTimeout(resolve, 3000));
+				
+				// Most minimalist configuration possible
 				const fallbackOptions = {
 					connection: connection,
 					cluster: "mainnet-beta",
 					user: wallet,
-					// Exclude all problematic AMMs
-					ammsToExclude: ["Raydium CLMM", "Orca (Whirlpools)", "Meteora", "GooseFX"],
-					wrapUnwrapSOL: cache.config.wrapUnwrapSOL ?? true,
-					// Set retry options
+					// Just include the most stable AMMs
+					ammsToInclude: {
+						'Raydium': true,
+						'Orca': true,
+						'Saber': true,
+						'Mercurial': true,
+						'Aldrin': true
+					},
+					// Exclude everything else
+					ammsToExclude: {
+						'Raydium CLMM': true,
+						'Orca (Whirlpools)': true,
+						'Meteora': true,
+						'GooseFX': true,
+						'Cykura': true,
+						'Serum': true,
+						'Openbook': true,
+						'Unknown': true
+					},
+					wrapUnwrapSOL: true,
+					shouldLoadSerumOpenOrders: false,
 					retryRequestOptions: { 
-						maxRetries: 3,
-						retryBackoffType: 'exponential',
-						retryDelay: 1000
+						maxRetries: 2,
+						retryDelay: 1500
 					}
 				};
 				
-				// Log only relevant non-circular parts of options
-				console.log("Trying fallback Jupiter options:", {
-					cluster: fallbackOptions.cluster,
-					ammsToExclude: fallbackOptions.ammsToExclude,
-					wrapUnwrapSOL: fallbackOptions.wrapUnwrapSOL,
-				});
+				console.log("Trying minimalist Jupiter configuration");
+				console.log("Only including: Raydium, Orca, Saber, Mercurial, Aldrin");
 				
 				jupiter = await Jupiter.load(fallbackOptions);
 				spinner.succeed("Jupiter SDK loaded with fallback settings!");
 			} catch (retryError) {
 				spinner.fail("Jupiter initialization failed completely!");
 				console.error("Jupiter retry error:", retryError);
-				throw new Error(`Failed to initialize Jupiter: ${error.message}. Retry failed: ${retryError.message}`);
+				
+				// Try one last approach with direct initialization and no AMM options
+				spinner.text = "Attempting final fallback initialization...";
+				try {
+					// Wait before final attempt
+					await new Promise(resolve => setTimeout(resolve, 4000));
+					
+					// Create a connection with explicit commitment level
+					const finalConnection = new Connection(cache.config.rpc[0], 'confirmed');
+					
+					// Absolute minimum configuration
+					jupiter = await Jupiter.load({
+						connection: finalConnection,
+						cluster: "mainnet-beta",
+						user: wallet,
+						// No AMM configuration at all
+						// This can work but with limited DEX support
+						wrapUnwrapSOL: true
+					});
+					
+					console.log("Jupiter initialized with bare minimum configuration");
+					console.log("Warning: Limited DEX support with this configuration");
+					spinner.succeed("Jupiter SDK loaded with minimal settings!");
+				} catch (finalError) {
+					console.error("All Jupiter initialization attempts failed:", finalError);
+					throw new Error(`Could not initialize Jupiter after multiple attempts. Last error: ${finalError.message}`);
+				}
 			}
 		}
 		cache.isSetupDone = true;
