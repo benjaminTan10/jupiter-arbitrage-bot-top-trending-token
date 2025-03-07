@@ -1,0 +1,24 @@
+// This is a placeholder. You need to replace this with the actual proto definition from Jupiter.
+// Contact Jupiter or check their documentation to get the actual protobuf definition.
+
+syntax = "proto3";
+
+package jupiter;
+
+service JupiterService {
+  // Subscribe to price updates for a token
+  rpc SubscribeToPrice (SubscribeToPriceRequest) returns (stream PriceUpdate);
+  
+  // Other methods that might be available in Jupiter's gRPC API
+}
+
+message SubscribeToPriceRequest {
+  string tokenMint = 1; // The token's mint address
+}
+
+message PriceUpdate {
+  string tokenMint = 1;     // Token mint address
+  string price = 2;         // Current price
+  string timestamp = 3;     // Update timestamp
+  // Other fields that might be included in price updates
+} 
