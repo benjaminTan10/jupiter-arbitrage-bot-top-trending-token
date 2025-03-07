@@ -2,6 +2,7 @@ const { fetchTrendingTokens } = require('./tokenFetcher');
 const { scanAllTokenPrices, logDetailedTokenPrices } = require('./priceScanner');
 const { findAllArbitrageOpportunities } = require('./arbitrageDetector');
 const { logArbitrageOpportunities } = require('./arbitrageLogger');
+const { logEnhancedArbitrageOpportunities, logTokenMarketData } = require('./enhancedArbitrageLogger');
 const chalk = require('chalk');
 
 /**
@@ -39,8 +40,21 @@ const scanForArbitrageOpportunities = async (
     console.log(chalk.yellow('\n[Step 3/3] Finding arbitrage opportunities...'));
     const opportunities = findAllArbitrageOpportunities(allPrices, minProfitPercent);
 
-    // Log detailed arbitrage opportunities
-    logArbitrageOpportunities(opportunities);
+    // Log enhanced arbitrage opportunities with all price data
+    console.log(chalk.magenta.bold('\n===== DETAILED ARBITRAGE OPPORTUNITIES ====='));
+    logEnhancedArbitrageOpportunities(opportunities, allPrices);
+
+    // If there are top opportunities, log their full market data
+    if (opportunities.length > 0) {
+      console.log(chalk.magenta.bold('\n===== TOP OPPORTUNITY MARKET DATA ====='));
+      // Get the top opportunity
+      const topOpp = opportunities[0];
+      // Find the token data for this opportunity
+      const tokenData = allPrices[topOpp.tokenAddress];
+      if (tokenData) {
+        logTokenMarketData(tokenData);
+      }
+    }
     
     console.log(chalk.magenta.bold('\n===== ARBITRAGE SCAN COMPLETE =====\n'));
     return opportunities;

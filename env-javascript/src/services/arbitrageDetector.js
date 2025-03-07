@@ -104,6 +104,41 @@ const findAllArbitrageOpportunities = (allPrices, minProfitPercent = 1.0) => {
     console.log(chalk.yellow('\n=======================================\n'));
   }
   
+  // Calculate estimated gas costs (simplified approach)
+  const estimateGasCost = (buyDex, sellDex) => {
+    // Base cost in SOL for Solana transactions
+    const baseCost = 0.00001;
+    
+    // Add multipliers based on DEX complexity
+    const dexCostMultipliers = {
+      'Raydium': 1.0,
+      'Orca': 1.1,
+      'Raydium CLMM': 1.5,
+      'Orca (Whirlpools)': 1.5,
+      'Jupiter': 1.2,
+      'Openbook': 1.3,
+      'Marinade': 0.9,
+      'Meteora': 1.4
+    };
+    
+    const buyMultiplier = dexCostMultipliers[buyDex] || 1.2;
+    const sellMultiplier = dexCostMultipliers[sellDex] || 1.2;
+    
+    return baseCost * buyMultiplier * sellMultiplier;
+  };
+  
+  // Add in the findAllArbitrageOpportunities function:
+  // For each opportunity found, add:
+  allOpportunities.forEach(opportunity => {
+    const { buyDex, sellDex } = opportunity;
+    opportunity.estimatedGasCost = estimateGasCost(buyDex, sellDex);
+    opportunity.netProfit = opportunity.profitPercent - (opportunity.estimatedGasCost / 0.1 * 100);
+    opportunity.timestamp = Date.now();
+    opportunity.tradeSize = 0.1; // Default trade size in SOL
+    opportunity.buyPath = ['SOL', opportunity.tokenSymbol];  
+    opportunity.sellPath = [opportunity.tokenSymbol, 'SOL'];
+  });
+  
   return allOpportunities;
 };
 

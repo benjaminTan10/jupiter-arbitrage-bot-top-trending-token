@@ -22,6 +22,7 @@ const { scanForArbitrageOpportunities } = require('../services/arbitrageScanner'
 const fs = require("fs");
 const path = require("path");
 const chalk = require('chalk');
+const { startLiveTokenMonitor } = require('../services/liveTokenMonitor');
 
 const waitabit = async (ms) => {
 	const mySecondPromise = new Promise(function(resolve,reject){
@@ -562,6 +563,66 @@ const run = async () => {
 				console.error('Error running arbitrage scanner:', error);
 				// Continue with normal bot operation even if scanner fails
 			}
+		}
+
+		// Check if live monitor is requested
+		if (process.env.LIVE_MONITOR === 'true') {
+			console.log(chalk.green('Starting live token price monitor...'));
+			
+			// Get tokens to monitor from config or environment
+			const tokensToMonitor = [];
+			
+			// First add the trading pair if available
+			if (tokenA && tokenB) {
+				tokensToMonitor.push(tokenA);
+				tokensToMonitor.push(tokenB);
+			}
+			
+			// Then add any watchlist tokens from environment
+			if (process.env.WATCH_TOKENS) {
+				const watchAddresses = process.env.WATCH_TOKENS.split(',');
+				// Fetch token metadata for these addresses
+				// This would need implementation based on your token fetching approach
+			}
+			
+			// If no tokens specified, use some defaults or popular tokens
+			if (tokensToMonitor.length === 0) {
+				// Add some popular tokens
+				tokensToMonitor.push({
+					address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+					symbol: "USDC",
+					name: "USD Coin",
+					decimals: 6
+				});
+				// Add more default tokens as needed
+			}
+			
+			// Start the monitor
+			const baseToken = {
+				address: "So11111111111111111111111111111111111111112", // Wrapped SOL
+				symbol: "SOL",
+				name: "Wrapped SOL",
+				decimals: 9
+			};
+			
+			const refreshInterval = parseInt(process.env.MONITOR_REFRESH_INTERVAL) || 15000;
+			
+			const stopMonitor = await startLiveTokenMonitor(
+				jupiter, 
+				tokensToMonitor, 
+				baseToken, 
+				refreshInterval
+			);
+			
+			// Handle graceful shutdown
+			process.on('SIGINT', () => {
+				console.log('Stopping price monitor...');
+				stopMonitor();
+				process.exit(0);
+			});
+			
+			// Don't continue with normal bot operation
+			return;
 		}
 
 		if (cache.config.tradingStrategy === "pingpong") {
