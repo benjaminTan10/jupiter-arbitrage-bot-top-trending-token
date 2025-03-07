@@ -3,6 +3,7 @@ const JSBI = require('jsbi');
 const fs = require('fs');
 const path = require('path');
 const { createTempDir } = require('../utils');
+const chalk = require('chalk');
 
 // Standard token amount to use for quotes (0.1 SOL equivalent)
 const QUOTE_AMOUNT = JSBI.BigInt(100000000); // 0.1 * 10^9
@@ -119,4 +120,72 @@ const scanAllTokenPrices = async (jupiter, tokens, baseToken) => {
   return allPrices;
 };
 
-module.exports = { scanAllTokenPrices, getTokenPricesAcrossDEXes }; 
+/**
+ * Logs detailed token prices to help troubleshoot and optimize trading
+ * @param {Object} allPrices - Map of token addresses to prices by DEX
+ */
+const logDetailedTokenPrices = (allPrices) => {
+  if (!allPrices || Object.keys(allPrices).length === 0) {
+    console.log('No token price data available to log');
+    return;
+  }
+  
+  console.log(chalk.cyan.bold(`\n===== DETAILED TOKEN PRICES FROM ${Object.keys(allPrices).length} TOKENS =====`));
+  
+  // Show top 5 tokens with the most price variance between DEXes
+  const tokensWithVariance = [];
+  
+  Object.keys(allPrices).forEach(tokenAddress => {
+    const token = allPrices[tokenAddress];
+    const prices = token.prices;
+    const dexes = Object.keys(prices);
+    
+    if (dexes.length >= 2) {
+      // Calculate min, max, and variance
+      let minPrice = Infinity;
+      let maxPrice = 0;
+      let minDex = '';
+      let maxDex = '';
+      
+      dexes.forEach(dex => {
+        const price = prices[dex].price;
+        if (price < minPrice) {
+          minPrice = price;
+          minDex = dex;
+        }
+        if (price > maxPrice) {
+          maxPrice = price;
+          maxDex = dex;
+        }
+      });
+      
+      const variance = ((maxPrice / minPrice) - 1) * 100;
+      
+      tokensWithVariance.push({
+        symbol: token.symbol,
+        minPrice,
+        minDex,
+        maxPrice,
+        maxDex,
+        variance,
+        dexCount: dexes.length
+      });
+    }
+  });
+  
+  // Sort by variance (descending)
+  tokensWithVariance.sort((a, b) => b.variance - a.variance);
+  
+  // Show top tokens with highest variance
+  const topTokens = tokensWithVariance.slice(0, 5);
+  
+  topTokens.forEach((token, index) => {
+    console.log(chalk.cyan.bold(`\n${index + 1}. ${token.symbol} - Listed on ${token.dexCount} DEXes with ${token.variance.toFixed(2)}% variance`));
+    console.log(chalk.green(`   Lowest: ${token.minPrice.toFixed(8)} on ${token.minDex}`));
+    console.log(chalk.red(`   Highest: ${token.maxPrice.toFixed(8)} on ${token.maxDex}`));
+  });
+  
+  console.log(chalk.cyan.bold('\n================================================================\n'));
+};
+
+module.exports = { scanAllTokenPrices, getTokenPricesAcrossDEXes, logDetailedTokenPrices }; 

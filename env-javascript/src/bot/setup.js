@@ -227,7 +227,13 @@ const setup = async () => {
 				slidingTaxmanEnabled: true
 			};
 
-			console.log("Initializing Jupiter with options:", JSON.stringify(jupiterOptions, null, 2));
+			// Log only relevant non-circular parts of options
+			console.log("Initializing Jupiter with options:", {
+				cluster: jupiterOptions.cluster,
+				ammsToExclude: jupiterOptions.ammsToExclude,
+				wrapUnwrapSOL: jupiterOptions.wrapUnwrapSOL,
+			});
+			
 			jupiter = await Jupiter.load(jupiterOptions);
 			spinner.succeed("Jupiter SDK loaded successfully!");
 		} catch (error) {
@@ -252,7 +258,13 @@ const setup = async () => {
 					}
 				};
 				
-				console.log("Trying fallback Jupiter options:", JSON.stringify(fallbackOptions, null, 2));
+				// Log only relevant non-circular parts of options
+				console.log("Trying fallback Jupiter options:", {
+					cluster: fallbackOptions.cluster,
+					ammsToExclude: fallbackOptions.ammsToExclude,
+					wrapUnwrapSOL: fallbackOptions.wrapUnwrapSOL,
+				});
+				
 				jupiter = await Jupiter.load(fallbackOptions);
 				spinner.succeed("Jupiter SDK loaded with fallback settings!");
 			} catch (retryError) {

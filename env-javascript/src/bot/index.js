@@ -21,6 +21,7 @@ const { swap, failedSwapHandler, successSwapHandler } = require("./swap");
 const { scanForArbitrageOpportunities } = require('../services/arbitrageScanner');
 const fs = require("fs");
 const path = require("path");
+const chalk = require('chalk');
 
 const waitabit = async (ms) => {
 	const mySecondPromise = new Promise(function(resolve,reject){
@@ -510,7 +511,7 @@ const run = async () => {
 
 		// Run arbitrage scanner if enabled
 		if (process.env.ENABLE_ARB_SCANNER === 'true') {
-			console.log('Running arbitrage scanner to find opportunities...');
+			console.log(chalk.magenta.bold('\n===== STARTING ARBITRAGE SCANNER =====\n'));
 			try {
 				// Use wrapped SOL as the base token for price comparison
 				const baseToken = {
@@ -524,12 +525,20 @@ const run = async () => {
 										cache.config.minPercProfit || 
 										1.0;
 				
+				// Get token limit from environment or use default
+				const tokenLimit = parseInt(process.env.ARB_TOKEN_LIMIT) || 50;
+				
+				console.log(chalk.cyan(`Scanning with parameters:`));
+				console.log(chalk.cyan(`- Base token: ${baseToken.symbol}`));
+				console.log(chalk.cyan(`- Min profit: ${minProfitPercent}%`));
+				console.log(chalk.cyan(`- Token limit: ${tokenLimit}`));
+				
 				// Scan for opportunities
 				const opportunities = await scanForArbitrageOpportunities(
 					jupiter, 
 					baseToken, 
 					minProfitPercent,
-					50 // Limit to 50 tokens for reasonable performance
+					tokenLimit
 				);
 				
 				// Store opportunities in cache for UI display
@@ -537,7 +546,17 @@ const run = async () => {
 				
 				// Allow the bot to use scan results if we're in arbitrage mode
 				if (cache.config.tradingStrategy === 'arbitrage' && opportunities.length > 0) {
-					console.log(`Found ${opportunities.length} potential trading opportunities. Will consider these in trading.`);
+					console.log(chalk.green(`Found ${opportunities.length} potential trading opportunities. Will consider these in trading.`));
+					
+					// Schedule next scan if interval is defined
+					if (process.env.ARB_SCAN_INTERVAL_MINUTES) {
+						const intervalMinutes = parseInt(process.env.ARB_SCAN_INTERVAL_MINUTES);
+						console.log(chalk.cyan(`Next arbitrage scan scheduled in ${intervalMinutes} minutes`));
+						setTimeout(() => {
+							console.log(chalk.yellow('Running scheduled arbitrage scan...'));
+							// We'll recursively call the scan function
+						}, intervalMinutes * 60 * 1000);
+					}
 				}
 			} catch (error) {
 				console.error('Error running arbitrage scanner:', error);

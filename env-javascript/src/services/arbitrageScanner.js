@@ -1,6 +1,7 @@
 const { fetchTrendingTokens } = require('./tokenFetcher');
-const { scanAllTokenPrices } = require('./priceScanner');
+const { scanAllTokenPrices, logDetailedTokenPrices } = require('./priceScanner');
 const { findAllArbitrageOpportunities } = require('./arbitrageDetector');
+const { logArbitrageOpportunities } = require('./arbitrageLogger');
 const chalk = require('chalk');
 
 /**
@@ -30,10 +31,16 @@ const scanForArbitrageOpportunities = async (
     // Step 2: Get token prices across DEXes
     console.log(chalk.yellow('\n[Step 2/3] Scanning token prices across DEXes...'));
     const allPrices = await scanAllTokenPrices(jupiter, trendingTokens, baseToken);
+
+    // Log detailed token prices
+    logDetailedTokenPrices(allPrices);
     
     // Step 3: Find arbitrage opportunities
     console.log(chalk.yellow('\n[Step 3/3] Finding arbitrage opportunities...'));
     const opportunities = findAllArbitrageOpportunities(allPrices, minProfitPercent);
+
+    // Log detailed arbitrage opportunities
+    logArbitrageOpportunities(opportunities);
     
     console.log(chalk.magenta.bold('\n===== ARBITRAGE SCAN COMPLETE =====\n'));
     return opportunities;
