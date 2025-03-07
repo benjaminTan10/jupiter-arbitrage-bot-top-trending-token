@@ -1,6 +1,7 @@
 use anyhow::Result;
 use solana_sdk::transaction::VersionedTransaction;
 use tracing::{info, warn};
+use solana_sdk::signature::Signer;
 
 use crate::bot::{cache::Cache, jupiter::JupiterClient};
 

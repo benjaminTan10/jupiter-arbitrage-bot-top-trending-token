@@ -2,7 +2,7 @@ use anyhow::Result;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     pubkey::Pubkey,
-    signature::{Keypair, read_keypair_file},
+    signature::{Keypair, read_keypair_file, Signer},
 };
 use std::str::FromStr;
 use tracing::{info, warn};

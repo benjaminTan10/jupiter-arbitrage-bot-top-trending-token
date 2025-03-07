@@ -2,6 +2,7 @@ use anyhow::Result;
 use jupiter_swap_api_client::JupiterSwapApiClient;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
+use solana_sdk::signature::Signer;
 use std::collections::HashMap;
 use std::time::Duration;
 

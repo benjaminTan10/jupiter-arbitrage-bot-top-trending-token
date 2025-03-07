@@ -18,7 +18,10 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config> {
 
 /// Load wallet keypair from file
 pub fn load_wallet<P: AsRef<Path>>(path: P) -> Result<Keypair> {
-    Ok(read_keypair_file(path)?)
+    match read_keypair_file(path) {
+        Ok(keypair) => Ok(keypair),
+        Err(err) => Err(anyhow::anyhow!("Failed to read keypair file: {}", err)),
+    }
 }
 
 /// Resolve token addresses to TokenInfo objects
