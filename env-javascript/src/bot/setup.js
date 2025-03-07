@@ -214,50 +214,53 @@ const setup = async () => {
 		const connection = new Connection(cache.config.rpc[0]);
 
 		spinner.text = "Loading the Jupiter V4 SDK and getting ready to trade...";
+		let jupiter;
+		try {
+			// Set safer default options for Jupiter
+			const jupiterOptions = {
+				connection: connection,
+				cluster: "mainnet-beta",
+				user: wallet,
+				// Only enable specific AMMs to avoid the Raydium CLMM error
+				ammsToExclude: ["Raydium CLMM"], // Exclude Raydium CLMM which is causing the error
+				wrapUnwrapSOL: cache.config.wrapUnwrapSOL ?? true,
+				slidingTaxmanEnabled: true
+			};
 
-		const jupiter = await Jupiter.load({
-			connection,
-			cluster: cache.config.network,
-			user: wallet,
-			restrictIntermediateTokens: false,
-			shouldLoadSerumOpenOrders: false,
-			wrapUnwrapSOL: cache.wrapUnwrapSOL,
-			ammsToExclude: {
-				'Aldrin': false,
-				'Crema': false,
-				'Cropper': true,
-				'Cykura': true,
-				'DeltaFi': false,
-				'GooseFX': true,
-				'Invariant': false,
-				'Lifinity': false,
-				'Lifinity V2': false,
-				'Marinade': false,
-				'Mercurial': false,
-				'Meteora': false,
-				'Raydium': false,
-				'Raydium CLMM': false,
-				'Saber': false,
-				'Serum': true,
-				'Orca': false,
-				'Step': false, 
-				'Penguin': false,
-				'Saros': false,
-				'Stepn': true,
-				'Orca (Whirlpools)': false,   
-				'Sencha': false,
-				'Saber (Decimals)': false,
-				'Dradex': true,
-				'Balansol': true,
-				'Openbook': false,
-				'Marco Polo': false,
-				'Oasis': false,
-				'BonkSwap': false,
-				'Phoenix': false,
-				'Symmetry': true,
-				'Unknown': true			
+			console.log("Initializing Jupiter with options:", JSON.stringify(jupiterOptions, null, 2));
+			jupiter = await Jupiter.load(jupiterOptions);
+			spinner.succeed("Jupiter SDK loaded successfully!");
+		} catch (error) {
+			spinner.fail(`Failed to initialize Jupiter: ${error.message}`);
+			console.error("Jupiter initialization error details:", error);
+			
+			// Try again with even more conservative settings
+			spinner.text = "Retrying Jupiter initialization with fallback settings...";
+			try {
+				const fallbackOptions = {
+					connection: connection,
+					cluster: "mainnet-beta",
+					user: wallet,
+					// Exclude all problematic AMMs
+					ammsToExclude: ["Raydium CLMM", "Orca (Whirlpools)", "Meteora", "GooseFX"],
+					wrapUnwrapSOL: cache.config.wrapUnwrapSOL ?? true,
+					// Set retry options
+					retryRequestOptions: { 
+						maxRetries: 3,
+						retryBackoffType: 'exponential',
+						retryDelay: 1000
+					}
+				};
+				
+				console.log("Trying fallback Jupiter options:", JSON.stringify(fallbackOptions, null, 2));
+				jupiter = await Jupiter.load(fallbackOptions);
+				spinner.succeed("Jupiter SDK loaded with fallback settings!");
+			} catch (retryError) {
+				spinner.fail("Jupiter initialization failed completely!");
+				console.error("Jupiter retry error:", retryError);
+				throw new Error(`Failed to initialize Jupiter: ${error.message}. Retry failed: ${retryError.message}`);
 			}
-		});
+		}
 		cache.isSetupDone = true;
 		spinner.succeed("Checking to ensure you are ARB ready...\n====================\n");
 		return { jupiter, tokenA, tokenB, wallet };

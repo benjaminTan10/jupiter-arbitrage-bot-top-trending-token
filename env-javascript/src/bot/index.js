@@ -19,6 +19,8 @@ const { setup, getInitialotherAmountThreshold, checkTokenABalance } = require(".
 const { printToConsole } = require("./ui/");
 const { swap, failedSwapHandler, successSwapHandler } = require("./swap");
 const { scanForArbitrageOpportunities } = require('../services/arbitrageScanner');
+const fs = require("fs");
+const path = require("path");
 
 const waitabit = async (ms) => {
 	const mySecondPromise = new Promise(function(resolve,reject){
@@ -463,8 +465,41 @@ const run = async () => {
 		// Are they ARB ready and part of the community?
 		await checkArbReady();
 
-		// set everything up
-        const { jupiter, tokenA, tokenB, wallet } = await setup();
+		console.log("Starting setup process...");
+		
+		// Log Node.js version info for debugging
+		console.log(`Node.js version: ${process.version}`);
+		console.log(`Process platform: ${process.platform}`);
+		console.log(`Current working directory: ${process.cwd()}`);
+
+		try {
+			// Verify temp directory and its files exist
+			const tempDir = path.join(process.cwd(), 'temp');
+			if (fs.existsSync(tempDir)) {
+				console.log(`Temp directory exists at: ${tempDir}`);
+				const files = fs.readdirSync(tempDir);
+				console.log(`Files in temp directory: ${files.join(', ')}`);
+				
+				// Check tokens.json format
+				if (files.includes('tokens.json')) {
+					const tokensPath = path.join(tempDir, 'tokens.json');
+					const tokens = JSON.parse(fs.readFileSync(tokensPath, 'utf8'));
+					console.log(`Tokens file contains ${tokens.tokens?.length || 0} tokens`);
+				}
+			} else {
+				console.log(`Temp directory doesn't exist, will be created during setup`);
+			}
+		} catch (fsError) {
+			console.error("File system check error:", fsError);
+		}
+		
+		// Continue with setup
+		console.log("Calling setup function...");
+		const { jupiter, tokenA, tokenB, wallet } = await setup();
+		
+		console.log("Setup completed successfully!");
+		console.log(`Token A: ${tokenA?.symbol} (${tokenA?.address})`);
+		console.log(`Token B: ${tokenB?.symbol} (${tokenB?.address})`);
 
 		// Set pubkey display
 		const walpubkeyfull = wallet.publicKey.toString();
