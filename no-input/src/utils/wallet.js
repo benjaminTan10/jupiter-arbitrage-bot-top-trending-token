@@ -12,7 +12,6 @@ const bs58 = require('bs58');
  */
 function initializeWallet(privateKey) {
   try {
-    console.log('Initializing wallet...');
     const wallet = Keypair.fromSecretKey(bs58.decode(privateKey));
     return wallet;
   } catch (error) {

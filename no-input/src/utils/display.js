@@ -19,7 +19,6 @@ async function displayIntro() {
   └───────────────────────────────────────────────┘
   `));
   
-  // Simulate a small delay to make the intro more readable
   await new Promise(resolve => setTimeout(resolve, 1000));
 }
 

@@ -31,8 +31,6 @@ class Trader extends EventEmitter {
    * Initialize the trader
    */
   async initialize() {
-    console.log('Initializing trader...');
-
     try {
       // Create connection to the blockchain
       this.connection = new Connection(this.config.rpcUrl, {
@@ -50,8 +48,6 @@ class Trader extends EventEmitter {
 
       // Check wallet balances
       await this.checkBalances();
-
-      console.log('Trader initialized successfully');
       return true;
     } catch (error) {
       console.error('Initialization error:', error);
@@ -84,10 +80,9 @@ class Trader extends EventEmitter {
             console.log(`Token Balance (${this.config.mintAddress}): ${balance}`);
           } else {
             this.balances[this.config.mintAddress] = 0;
-            console.log(`No token account found for ${this.config.mintAddress}`);
           }
         } catch (error) {
-          console.error(`Error fetching token balance for ${this.config.mintAddress}:`, error);
+          console.error(`Error fetching token balance:`, error);
         }
       }
 
@@ -103,11 +98,10 @@ class Trader extends EventEmitter {
    */
   async startTrading() {
     if (this.isRunning) {
-      console.log('Trading already running');
       return;
     }
 
-    console.log(`Starting trading with update interval: ${this.updateIntervalMs}ms`);
+    console.log(`Starting trading`);
     this.isRunning = true;
 
     // Start the main trading loop
@@ -126,11 +120,9 @@ class Trader extends EventEmitter {
    */
   stopTrading() {
     if (!this.isRunning) {
-      console.log('Trading already stopped');
       return;
     }
 
-    console.log('Stopping trading');
     clearInterval(this.tradingInterval);
     this.isRunning = false;
   }
@@ -140,7 +132,6 @@ class Trader extends EventEmitter {
    */
   async updateCycle() {
     this.lastUpdate = new Date();
-    console.log(`Update cycle started at ${this.lastUpdate.toISOString()}`);
 
     try {
       // 1. Fetch current prices
@@ -161,8 +152,6 @@ class Trader extends EventEmitter {
     } catch (error) {
       console.error('Error in update cycle:', error);
     }
-
-    console.log(`Update cycle completed. Next update in ${this.updateIntervalMs}ms`);
   }
 
   /**
@@ -205,8 +194,6 @@ class Trader extends EventEmitter {
    * Fetch current prices from Jupiter API
    */
   async fetchPrices() {
-    console.log('Fetching current prices...');
-
     try {
       // Define base tokens for price checking
       const baseTokens = ['So11111111111111111111111111111111111111112', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'];
@@ -260,7 +247,6 @@ class Trader extends EventEmitter {
         }
       }
 
-      console.log('Current prices:', this.currentPrices);
       return this.currentPrices;
     } catch (error) {
       console.error('Error fetching prices:', error);
@@ -272,8 +258,6 @@ class Trader extends EventEmitter {
    * Find trading opportunities based on current prices
    */
   async findOpportunities() {
-    console.log('Finding trading opportunities...');
-
     // Clear previous opportunities
     this.opportunities = [];
 
@@ -320,12 +304,8 @@ class Trader extends EventEmitter {
           };
 
           this.opportunities.push(opportunity);
-          console.log('Found opportunity:', opportunity);
-        } else {
-          console.log(`No profitable opportunity found. Potential profit: ${potentialProfit.toFixed(2)}%, minimum threshold: ${this.config.minProfitThreshold}%`);
+          console.log(`Found opportunity: ${potentialProfit.toFixed(2)}% profit`);
         }
-      } else {
-        console.log('No routes found for the specified tokens');
       }
 
       return this.opportunities;
@@ -340,20 +320,18 @@ class Trader extends EventEmitter {
    */
   async executeTrades() {
     if (!this.config.tradingEnabled) {
-      console.log('Trading is disabled, skipping execution');
       return;
     }
 
     if (this.opportunities.length === 0) {
-      console.log('No opportunities to execute');
       return;
     }
 
-    console.log(`Executing ${this.opportunities.length} trades...`);
+    console.log(`Executing ${this.opportunities.length} trades`);
 
     for (const opportunity of this.opportunities) {
       try {
-        console.log(`Executing trade: ${opportunity.fromToken} -> ${opportunity.toToken}`);
+        console.log(`Trade: ${opportunity.fromToken} -> ${opportunity.toToken}`);
 
         // Get swap instructions
         const swapData = await this.getJupiterSwap(
@@ -379,10 +357,8 @@ class Trader extends EventEmitter {
           { skipPreflight: false, preflightCommitment: 'confirmed' }
         );
 
-        console.log(`Trade executed successfully! Txid: ${txid}`);
-        console.log(`Input amount: ${opportunity.inputAmount} ${opportunity.fromToken}`);
-        console.log(`Expected output amount: ${opportunity.expectedOutputAmount} ${opportunity.toToken}`);
-        console.log(`Estimated profit: $${opportunity.estimatedValue.toFixed(2)}`);
+        console.log(`Transaction: ${txid}`);
+        console.log(`Profit: $${opportunity.estimatedValue.toFixed(2)}`);
 
         // Emit success event
         this.emit('tradingSuccess', {

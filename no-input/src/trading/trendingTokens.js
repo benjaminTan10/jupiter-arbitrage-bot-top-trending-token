@@ -32,11 +32,9 @@ class TrendingTokensTracker extends EventEmitter {
    */
   start() {
     if (this.isRunning) {
-      console.log('Trending tokens tracker already running');
       return;
     }
 
-    console.log('Starting trending tokens tracker...');
     this.isRunning = true;
 
     // Fetch immediately on start
@@ -53,11 +51,9 @@ class TrendingTokensTracker extends EventEmitter {
    */
   stop() {
     if (!this.isRunning) {
-      console.log('Trending tokens tracker already stopped');
       return;
     }
 
-    console.log('Stopping trending tokens tracker');
     clearInterval(this.updateInterval);
     this.isRunning = false;
   }
@@ -66,7 +62,6 @@ class TrendingTokensTracker extends EventEmitter {
    * Fetch trending tokens from configured sources
    */
   async fetchTrendingTokens() {
-    console.log('Fetching trending tokens...');
     this.lastUpdate = new Date();
     
     try {
@@ -77,8 +72,6 @@ class TrendingTokensTracker extends EventEmitter {
       for (const source of sources) {
         if (this.API_ENDPOINTS[source]) {
           fetchPromises.push(this._fetchFromSource(source));
-        } else {
-          console.warn(`Unknown trending token source: ${source}`);
         }
       }
       
@@ -94,21 +87,19 @@ class TrendingTokensTracker extends EventEmitter {
           allTokens = [...allTokens, ...result.value];
           successfulSources++;
         } else {
-          console.error(`Failed to fetch trending tokens from ${sources[index]}: ${result.reason || 'No tokens returned'}`);
+          console.error(`Failed to fetch trending tokens from ${sources[index]}`);
         }
       });
       
       // If all sources failed, try BirdEye as fallback
       if (successfulSources === 0 && this.enableBirdeyeFallback) {
-        console.log('All primary sources failed, falling back to BirdEye...');
         try {
           const birdeyeTokens = await this._fetchFromSource('birdeye');
           if (birdeyeTokens?.length > 0) {
             allTokens = birdeyeTokens;
-            console.log(`Retrieved ${birdeyeTokens.length} tokens from BirdEye fallback`);
           }
         } catch (error) {
-          console.error('BirdEye fallback also failed:', error.message);
+          console.error('BirdEye fallback failed');
         }
       }
       
@@ -128,10 +119,8 @@ class TrendingTokensTracker extends EventEmitter {
         // Limit number of tokens
         this.trendingTokens = sortedTokens.slice(0, this.config.trendingTokenLimit);
         
-        console.log(`Found ${this.trendingTokens.length} trending tokens after filtering`);
+        console.log(`Found ${this.trendingTokens.length} trending tokens`);
         this.emit('tokensUpdated', this.trendingTokens);
-      } else {
-        console.warn('No trending tokens found from any source');
       }
       
       return this.trendingTokens;
@@ -149,7 +138,6 @@ class TrendingTokensTracker extends EventEmitter {
    */
   async _fetchFromSource(source) {
     try {
-      console.log(`Fetching trending tokens from ${source}...`);
       const endpoint = this.API_ENDPOINTS[source];
       const response = await axios.get(endpoint, {
         headers: {
@@ -175,11 +163,8 @@ class TrendingTokensTracker extends EventEmitter {
         case 'birdeye':
           tokens = this._processBirdEyeResponse(response.data);
           break;
-        default:
-          console.warn(`Unknown source format: ${source}`);
       }
       
-      console.log(`Retrieved ${tokens.length} tokens from ${source}`);
       return tokens;
     } catch (error) {
       console.error(`Error fetching from ${source}:`, error.message);
@@ -366,13 +351,12 @@ class TrendingTokensTracker extends EventEmitter {
           break;
           
         default:
-          console.warn(`Unknown DEX: ${dex}`);
           return null;
       }
       
       return poolAddress;
     } catch (error) {
-      console.error(`Error getting pool for ${tokenAddress} on ${dex}:`, error.message);
+      console.error(`Error getting pool for ${tokenAddress}:`, error.message);
       return null;
     }
   }
