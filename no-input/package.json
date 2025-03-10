@@ -30,11 +30,8 @@
     "nodemon": "^2.0.21",
     "prettier": "^2.8.4"
   },
-  "overrides": {
-    "rpc-websockets": "7.4.17"
-  },
-  "resolutions": {
-    "rpc-websockets": "7.11.0",
+"overrides": {
+  "rpc-websockets": "7.10.0",
     "@solana/web3.js": "1.91.6"
   }
 }
