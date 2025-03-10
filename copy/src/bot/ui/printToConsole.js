@@ -9,62 +9,86 @@ const cache = require("../cache");
 function printToConsole({
 	date,
 	i,
-	side,
+	performanceOfRouteComp,
+	inputToken,
+	outputToken,
+	tokenA,
+	tokenB,
 	route,
-	inAmount,
-	outAmount,
-	impact,
-	slippage,
-	minOut,
-	profit,
-	profitUsd,
-	difference,
-	lpFees,
-	timings,
-	chartData,
+	simulatedProfit,
 	skipLog = false
 }) {
 	try {
 		if(!skipLog) {
 			console.clear();
 			
-			// Skip the chart rendering to avoid ASCII art
-			// if(chartData) {
-			// 	const config = {
-			// 		height: 7,
-			// 		colors: [chalk.green],
-			// 	};
-			// 	console.log(chart.plot(chartData, config));
-			// }
+			// Show main title and status
+			console.log("\n" + chalk.bold.cyan("═══════════════ JUPITER ARBITRAGE MONITOR ═══════════════\n"));
 			
-			// Show cleaner output with just relevant information
-			console.log("\n═════════════ JUPITER PRICE MONITOR ═════════════\n");
+			// Basic info section
+			console.log(chalk.bold.yellow("📊 MONITORING STATUS:"));
+			console.log(`${chalk.gray("Time:")} ${date.toLocaleString()}`);
+			console.log(`${chalk.gray("Iteration:")} ${i} (${cache.iterationPerMinute.value} iterations/min)`);
+			console.log(`${chalk.gray("Trading Enabled:")} ${cache.tradingEnabled ? chalk.green("YES") : chalk.red("NO")}`);
+			console.log(`${chalk.gray("Wallet:")} ${cache.walletpubkey || "unknown"}`);
 			
-			console.log(chalk.bold("MARKET PARAMETERS:"));
-			console.log(`${chalk.gray("Time:")} ${date}`);
-			console.log(`${chalk.gray("Iteration:")} ${i}`);
-			console.log(`${chalk.gray("Route:")} ${route}`);
-
-			// Price and token information
-			console.log(chalk.bold("\nPRICE DATA:"));
-			console.log(`${chalk.gray("Input Amount:")} ${inAmount}`);
-			console.log(`${chalk.gray("Output Amount:")} ${outAmount}`);
-			
-			// Only show profit info if it exists
-			if (profit) {
-				console.log(chalk.bold("\nARBITRAGE METRICS:"));
-				console.log(`${chalk.gray("Profit:")} ${profit} (${profitUsd})`);
-				console.log(`${chalk.gray("Difference:")} ${difference}`);
+			// Token information
+			console.log(chalk.bold.yellow("\n💰 TOKEN DETAILS:"));
+			console.log(`${chalk.gray("Token A:")} ${chalk.cyan(tokenA.symbol)} (${chalk.gray(tokenA.address.substring(0, 6) + '...' + tokenA.address.substring(tokenA.address.length - 4))})`);
+			if (tokenB && tokenB.symbol) {
+				console.log(`${chalk.gray("Token B:")} ${chalk.cyan(tokenB.symbol)} (${chalk.gray(tokenB.address.substring(0, 6) + '...' + tokenB.address.substring(tokenB.address.length - 4))})`);
 			}
 			
-			// Show less important info in a smaller section
-			console.log(chalk.bold("\nMARKET METRICS:"));
-			console.log(`${chalk.gray("Price Impact:")} ${impact}`);
-			console.log(`${chalk.gray("Slippage:")} ${slippage}%`);
-			console.log(`${chalk.gray("Minimum Out:")} ${minOut}`);
-			console.log(`${chalk.gray("LP Fees:")} ${lpFees}`);
+			// Current trade/route information
+			if (route) {
+				console.log(chalk.bold.yellow("\n📈 CURRENT ROUTE INFO:"));
+				console.log(`${chalk.gray("Input:")} ${chalk.green(toDecimal(route.amount, inputToken.decimals))} ${inputToken.symbol}`);
+				console.log(`${chalk.gray("Output:")} ${chalk.green(toDecimal(route.outAmount, outputToken.decimals))} ${outputToken.symbol}`);
+				console.log(`${chalk.gray("Route Performance:")} ${chalk.yellow(performanceOfRouteComp.toFixed(2))}ms`);
+				
+				// Display market makers if available
+				if (route.marketInfos && route.marketInfos.length > 0) {
+					console.log(chalk.bold.yellow("\n🏛️ LIQUIDITY SOURCES:"));
+					route.marketInfos.forEach((market, index) => {
+						console.log(`  ${index + 1}. ${chalk.cyan(market.label || "Unknown")} - ${chalk.gray(market.id?.substring(0, 8) || "Unknown ID")}`);
+					});
+				}
+				
+				// Profit information
+				console.log(chalk.bold.yellow("\n💸 PROFIT CALCULATION:"));
+				console.log(`${chalk.gray("Simulated Profit:")} ${simulatedProfit > 0 ? chalk.green(simulatedProfit.toFixed(4) + "%") : chalk.red(simulatedProfit.toFixed(4) + "%")}`);
+				console.log(`${chalk.gray("Min. Required Profit:")} ${chalk.yellow(cache.config.minPercProfit + "%")}`);
+				console.log(`${chalk.gray("Slippage:")} ${chalk.yellow((route.slippageBps / 100).toFixed(2) + "%")}`);
+				
+				// Current trade status
+				if (cache.swappingRightNow) {
+					console.log(chalk.bold.magentaBright("\n⚡ EXECUTING TRADE NOW! ⚡"));
+				}
+			} else {
+				console.log(chalk.bold.red("\nNo routes available for this token pair"));
+			}
 			
-			// Hotkeys help in a smaller, less obtrusive format
+			// Stats section
+			console.log(chalk.bold.yellow("\n📝 STATISTICS:"));
+			console.log(`${chalk.gray("Success Trades:")} ${chalk.green(cache.tradeCounter.buy.success + cache.tradeCounter.sell.success)}`);
+			console.log(`${chalk.gray("Failed Trades:")} ${chalk.red(cache.tradeCounter.buy.fail + cache.tradeCounter.sell.fail)}`);
+			console.log(`${chalk.gray("Max Profit Spotted:")} ${chalk.green(cache.maxProfitSpotted.buy.toFixed(4) + "%")}`);
+			
+			// Recent trade history (limited to last 3)
+			if (cache.tradeHistory && cache.tradeHistory.length > 0) {
+				console.log(chalk.bold.yellow("\n🔄 RECENT TRADES:"));
+				
+				const recentTrades = cache.tradeHistory.slice(-3);
+				recentTrades.forEach((trade, index) => {
+					const result = trade.error ? chalk.red("❌ FAILED") : chalk.green("✅ SUCCESS");
+					console.log(`  ${index + 1}. ${result} | ${trade.date.substring(11)} | ${chalk.cyan(trade.inputToken)} → ${chalk.cyan(trade.outputToken)} | Profit: ${trade.profit > 0 ? chalk.green(trade.profit.toFixed(4) + "%") : chalk.red(trade.profit.toFixed(4) + "%")}`);
+					if (trade.error) {
+						console.log(`     Error: ${chalk.red(trade.error.substring(0, 50) + (trade.error.length > 50 ? '...' : ''))}`);
+					}
+				});
+			}
+			
+			// Hotkeys reminder at bottom
 			console.log(chalk.gray("\nHOTKEYS: [H]elp [P]rofit [T]rade History [S]im Mode [CTRL+C] Exit"));
 		}
 	} catch (error) {

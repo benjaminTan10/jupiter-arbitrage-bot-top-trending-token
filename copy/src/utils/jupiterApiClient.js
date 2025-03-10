@@ -21,6 +21,8 @@ const getQuote = async (inputMint, outputMint, amount, slippageBps = 100) => {
         // Convert amount to string if it's not already
         const amountStr = amount.toString();
         
+        console.log(chalk.cyan(`Fetching quote: ${inputMint.substring(0, 6)}... → ${outputMint.substring(0, 6)}... Amount: ${amountStr}`));
+        
         // Get quote from Jupiter API
         const quoteResponse = await jupiterQuoteApi.quoteGet({
             inputMint,
@@ -30,6 +32,23 @@ const getQuote = async (inputMint, outputMint, amount, slippageBps = 100) => {
             onlyDirectRoutes: false,
             asLegacyTransaction: false,
         });
+        
+        if (quoteResponse) {
+            const inAmount = quoteResponse.inAmount;
+            const outAmount = quoteResponse.outAmount;
+            const priceImpact = (parseFloat(quoteResponse.priceImpactPct) * 100).toFixed(4);
+            
+            console.log(chalk.green(`Quote received: In: ${inAmount}, Out: ${outAmount}, Impact: ${priceImpact}%`));
+            
+            // Log route plan if available
+            if (quoteResponse.routePlan && quoteResponse.routePlan.length > 0) {
+                console.log(chalk.yellow('Route plan:'));
+                quoteResponse.routePlan.forEach((step, idx) => {
+                    const ammName = step.swapInfo?.label || 'Unknown';
+                    console.log(chalk.gray(`  ${idx+1}. ${ammName} - In: ${step.inputAmount} → Out: ${step.outputAmount}`));
+                });
+            }
+        }
         
         return quoteResponse;
     } catch (error) {
@@ -46,6 +65,8 @@ const getQuote = async (inputMint, outputMint, amount, slippageBps = 100) => {
  */
 const getSwapTransaction = async (quoteResponse, userPublicKey) => {
     try {
+        console.log(chalk.cyan(`Creating swap transaction for user: ${userPublicKey.substring(0, 6)}...`));
+        
         // Prepare swap transaction request
         const swapRequest = {
             quoteResponse,
@@ -56,6 +77,7 @@ const getSwapTransaction = async (quoteResponse, userPublicKey) => {
         // Get swap transaction from Jupiter API
         const swapTransactionResponse = await jupiterQuoteApi.swapPost(swapRequest);
         
+        console.log(chalk.green('Swap transaction created successfully'));
         return swapTransactionResponse;
     } catch (error) {
         console.error(chalk.red('Error getting swap transaction:'), error.message);
@@ -72,11 +94,14 @@ const getSwapTransaction = async (quoteResponse, userPublicKey) => {
  */
 const executeSwap = async (swapTransactionResponse, connection, wallet) => {
     try {
+        console.log(chalk.yellow('Executing swap transaction...'));
+        
         const txid = swapTransactionResponse.swapTransaction;
         const rawTransaction = Buffer.from(txid, 'base64');
         
         // Determine if it's a legacy or versioned transaction
         const isVersionedTransaction = rawTransaction[0] === 0x80;
+        console.log(chalk.gray(`Transaction type: ${isVersionedTransaction ? 'Versioned' : 'Legacy'}`));
         
         let transaction;
         if (isVersionedTransaction) {
@@ -100,18 +125,29 @@ const executeSwap = async (swapTransactionResponse, connection, wallet) => {
             preflightCommitment: 'confirmed',
         };
         
+        console.log(chalk.yellow('Sending transaction to blockchain...'));
         const signature = await connection.sendRawTransaction(
             transaction.serialize(),
             sendOptions
         );
         
+        console.log(chalk.green(`Transaction sent with signature: ${signature}`));
+        
         // Wait for confirmation
+        console.log(chalk.yellow('Waiting for confirmation...'));
         const confirmationResponse = await connection.confirmTransaction(signature, 'confirmed');
+        
+        const success = confirmationResponse?.value?.err === null;
+        if (success) {
+            console.log(chalk.green('Transaction confirmed successfully!'));
+        } else {
+            console.log(chalk.red(`Transaction failed: ${JSON.stringify(confirmationResponse?.value?.err)}`));
+        }
         
         return {
             signature,
             confirmationResponse,
-            success: confirmationResponse?.value?.err === null,
+            success: success,
         };
     } catch (error) {
         console.error(chalk.red('Error executing swap:'), error.message);
@@ -128,20 +164,26 @@ const executeSwap = async (swapTransactionResponse, connection, wallet) => {
  */
 const checkArbitrageOpportunity = async (tokenAMint, tokenBMint, amount) => {
     try {
+        console.log(chalk.cyan(`Checking arbitrage: ${tokenAMint.substring(0, 6)}... ↔ ${tokenBMint.substring(0, 6)}... Amount: ${amount}`));
+        
         // Convert amount to string if it's not already
         const amountStr = amount.toString();
         
         // Get quote for A -> B
+        console.log(chalk.gray('Getting forward quote (A→B)...'));
         const forwardQuote = await getQuote(tokenAMint, tokenBMint, amountStr, 100);
         
         // Calculate the amount we would receive from A -> B
         const receivedAmount = forwardQuote.outAmount;
+        console.log(chalk.gray(`Forward swap would yield: ${receivedAmount}`));
         
         // Get quote for B -> A with the amount we would receive
+        console.log(chalk.gray('Getting reverse quote (B→A)...'));
         const reverseQuote = await getQuote(tokenBMint, tokenAMint, receivedAmount, 100);
         
         // Calculate the final amount we would receive after the round trip
         const finalAmount = reverseQuote.outAmount;
+        console.log(chalk.gray(`Reverse swap would yield: ${finalAmount}`));
         
         // Calculate profit percentage
         const startAmount = BigInt(amountStr);
@@ -149,13 +191,21 @@ const checkArbitrageOpportunity = async (tokenAMint, tokenBMint, amount) => {
         const profitAmount = endAmount - startAmount;
         const profitPercentage = Number(profitAmount * BigInt(10000) / startAmount) / 100;
         
+        const hasOpportunity = profitPercentage > 0;
+        
+        if (hasOpportunity) {
+            console.log(chalk.green(`✅ ARBITRAGE OPPORTUNITY FOUND: ${profitPercentage.toFixed(4)}% profit`));
+        } else {
+            console.log(chalk.red(`❌ No arbitrage opportunity: ${profitPercentage.toFixed(4)}% profit`));
+        }
+        
         return {
             startAmount: amountStr,
             receivedAmount,
             finalAmount,
             profitAmount: profitAmount.toString(),
             profitPercentage,
-            hasOpportunity: profitPercentage > 0,
+            hasOpportunity,
             forwardQuote,
             reverseQuote
         };
