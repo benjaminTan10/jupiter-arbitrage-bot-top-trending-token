@@ -1,7 +1,7 @@
 const EventEmitter = require('events');
 const axios = require('axios');
 const { Connection } = require('../utils/connection');
-const { PublicKey } = require('@solana/web3.js/lib/index.browser.esm.js');
+const { PublicKey, Keypair, Transaction } = require('../utils/solana-web3');
 const bs58 = require('bs58');
 const JSBI = require('jsbi');
 
