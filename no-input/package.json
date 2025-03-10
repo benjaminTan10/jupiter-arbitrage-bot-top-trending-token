@@ -12,7 +12,8 @@
   "license": "MIT",
   "dependencies": {
     "chalk": "^4.1.2",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "events": "^3.3.0"
   },
   "devDependencies": {
     "eslint": "^8.36.0",

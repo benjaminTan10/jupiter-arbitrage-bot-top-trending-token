@@ -1,5 +1,6 @@
 const config = require('./config/envConfig');
 const { displayIntro } = require('./utils/display');
+const Trader = require('./trading/trader');
 
 async function main() {
   // Validate configuration
@@ -18,13 +19,36 @@ async function main() {
   console.log('Trading Enabled:', config.tradingEnabled);
   console.log('Strategy Type:', config.strategyType);
   
-  // Here you would initialize your trading logic, connect to APIs, etc.
-  // using the configuration from the environment variables
+  // Initialize the trader
+  const trader = new Trader(config);
   
-  // Example:
-  // const trader = new Trader(config);
-  // await trader.initialize();
-  // await trader.startTrading();
+  // Set up event handlers
+  trader.on('tradingSuccess', (opportunity) => {
+    console.log(`Trading success event: Profit $${opportunity.estimatedValue.toFixed(2)}`);
+  });
+  
+  trader.on('tradingError', (error) => {
+    console.error('Trading error event:', error.message);
+  });
+  
+  // Initialize and start trading
+  try {
+    await trader.initialize();
+    await trader.startTrading();
+    
+    console.log('Bot is now running. Press CTRL+C to stop.');
+  } catch (error) {
+    console.error('Failed to start trading:', error);
+    process.exit(1);
+  }
+  
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('Shutting down...');
+    trader.stopTrading();
+    console.log('Goodbye!');
+    process.exit(0);
+  });
 }
 
 // Handle errors
