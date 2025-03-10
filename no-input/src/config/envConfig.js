@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { PublicKey } = require('@solana/web3.js/lib/index.browser.esm.js');
 
 /**
  * Configuration loader that reads from environment variables

@@ -2,7 +2,7 @@ const config = require('./config/envConfig');
 const {displayIntro} = require('./utils/display');
 const Trader = require('./trading/trader-rest');
 const TrendingTokensTracker = require('./trading/trendingTokens');
-const {Connection} = require('@solana/web3.js');
+const {Connection} = require('./utils/connection');
 const {initializeWallet} = require('./utils/wallet');
 
 async function main() {

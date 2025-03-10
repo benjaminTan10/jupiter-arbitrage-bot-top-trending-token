@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { PublicKey } = require('@solana/web3.js');
+const { PublicKey } = require('@solana/web3.js/lib/index.browser.esm.js');
 const EventEmitter = require('events');
 const config = require('../config/envConfig');
 

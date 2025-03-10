@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const axios = require('axios');
-const { Connection, Keypair, PublicKey, Transaction } = require('@solana/web3.js');
+const { Connection } = require('../utils/connection');
+const { PublicKey } = require('@solana/web3.js/lib/index.browser.esm.js');
 const bs58 = require('bs58');
 const JSBI = require('jsbi');
 
@@ -33,10 +34,7 @@ class Trader extends EventEmitter {
   async initialize() {
     try {
       // Create connection to the blockchain
-      this.connection = new Connection(this.config.rpcUrl, {
-        commitment: 'confirmed',
-        disableRetryOnRateLimit: true
-      });
+      this.connection = new Connection(this.config.rpcUrl);
 
       // Initialize wallet from private key
       if (!this.config.privateKey) {

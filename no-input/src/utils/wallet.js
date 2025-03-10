@@ -1,4 +1,4 @@
-const { Keypair, Connection, PublicKey } = require('@solana/web3.js');
+const { Keypair, PublicKey } = require('@solana/web3.js/lib/index.browser.esm.js');
 const bs58 = require('bs58');
 
 /**
