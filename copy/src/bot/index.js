@@ -19,14 +19,16 @@ const {setup,getInitialotherAmountThreshold,checkTokenABalance} = require("./set
 const {printToConsole} = require("./ui/");
 const {swap,failedSwapHandler,successSwapHandler} = require("./swap");
 
+// Force disable intro animation by setting environment variable
+process.env.SKIP_INTRO = "true";
+
 const waitabit = async (ms) => {
-	const mySecondPromise = new Promise(function(resolve,reject) {
-		console.log('construct a promise...')
+	return new Promise((resolve) => {
 		setTimeout(() => {
-			reject(console.log('Error in promise'));
-		},ms)
-	})
-}
+			resolve();
+		},ms);
+	});
+};
 
 function getRandomAmt(runtime) {
 	const min = Math.ceil((runtime * 10000) * 0.99);

@@ -6,9 +6,7 @@ const JSBI = require('jsbi');
 const bs58 = require("bs58");
 const {PublicKey,Connection,Keypair,LAMPORTS_PER_SOL} = require("@solana/web3.js");
 require("dotenv").config();
-const { fetchTrendingTokens, getUSDCToken } = require('./tokenFetcher');
-
-const createTempDir = () => !fs.existsSync("./temp") && fs.mkdirSync("./temp");
+const {createTempDir, fetchTrendingTokens, getUSDCToken} = require('./tokenFetcher');
 
 const getCircularReplacer = () => {
 	const seen = new WeakSet();
@@ -25,8 +23,10 @@ const getCircularReplacer = () => {
 	};
 };
 
-const storeItInTempAsJSON = (filename,data) =>
+const storeItInTempAsJSON = (filename,data) => {
+	createTempDir();
 	fs.writeFileSync(`./temp/${filename}.json`,JSON.stringify(data,getCircularReplacer(),2));
+};
 
 const createConfigFile = (config) => {
 	const configSpinner = ora({

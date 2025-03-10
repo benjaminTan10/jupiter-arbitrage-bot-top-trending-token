@@ -2,7 +2,15 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const chalk = require('chalk');
-const {createTempDir} = require('./index');
+
+/**
+ * Creates temp directory if it doesn't exist
+ */
+const createTempDir = () => {
+    if (!fs.existsSync("./temp")) {
+        fs.mkdirSync("./temp");
+    }
+};
 
 /**
  * Fetches trending tokens from Jupiter API
@@ -58,5 +66,6 @@ const getUSDCToken = () => {
 
 module.exports = {
     fetchTrendingTokens,
-    getUSDCToken
+    getUSDCToken,
+    createTempDir
 }; 

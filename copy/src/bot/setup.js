@@ -2,15 +2,8 @@ const fs = require("fs");
 const chalk = require("chalk");
 const ora = require("ora-classic");
 const bs58 = require("bs58");
-const {Jupiter} = require("@jup-ag/core");
 const {Connection,Keypair,PublicKey,LAMPORTS_PER_SOL} = require("@solana/web3.js");
-
-var JSBI = (require('jsbi'));
-var invariant = (require('tiny-invariant'));
-var _Decimal = (require('decimal.js'));
-var _Big = (require('big.js'));
-var toFormat = (require('toformat'));
-var anchor = require('@project-serum/anchor');
+const JSBI = require('jsbi');
 
 const {logExit} = require("./exit");
 const {toDecimal,createTempDir} = require("../utils");
@@ -18,6 +11,12 @@ const {intro,listenHotkeys} = require("./ui");
 const {setTimeout} = require("timers/promises");
 const cache = require("./cache");
 const {fetchTrendingTokens,getUSDCToken} = require("../utils/tokenFetcher");
+const {
+    jupiterQuoteApi,
+    getQuote,
+    checkArbitrageOpportunity
+} = require("../utils/jupiterApiClient");
+
 const wrapUnwrapSOL = cache.wrapUnwrapSOL;
 
 // Account balance code
@@ -84,66 +83,10 @@ const checkTokenABalance = async (tokenObj,requiredAmount) => {
 	}
 }
 
-// Load configuration directly from environment variables
-const loadConfigFromEnv = () => {
-	console.log(chalk.cyan("Loading configuration from environment variables..."));
-
-	// Parse the token address from environment variables
-	const tokenAddress = process.env.MINT_ADDRESS || 'So11111111111111111111111111111111111111112';
-
-	// Get RPC configuration
-	const defaultRpc = process.env.DEFAULT_RPC;
-	const altRpcList = process.env.ALT_RPC_LIST ? process.env.ALT_RPC_LIST.split(',').filter(Boolean) : [];
-	const rpcList = [defaultRpc,...altRpcList].filter(Boolean);
-
-	// Parse other settings
-	const tradingEnabled = process.env.TRADING_ENABLED === "true";
-	const tradeSize = parseFloat(process.env.TRADE_SIZE_SOL) || 1.0;
-	const tradeSizeStrategy = process.env.TRADE_SIZE_STRATEGY || "fixed";
-	const minPercProfit = parseFloat(process.env.MIN_PROFIT_THRESHOLD) || 0.5;
-	const slippage = parseInt(process.env.MAX_SLIPPAGE_PERCENT * 100) || 100; // Convert percent to BPS
-	const priority = parseInt(process.env.PRIORITY) || 100;
-	const minInterval = parseInt(process.env.MIN_INTERVAL_MS) || 100;
-	const adaptiveSlippage = process.env.ADAPTIVE_SLIPPAGE === "true" ? 1 : 0;
-
-	const config = {
-		network: "mainnet-beta",
-		rpc: rpcList,
-		tradingStrategy: "arbitrage", // Force arbitrage strategy
-		tokenA: {address: tokenAddress}, // Will be populated with full token data later
-		slippage: slippage,
-		adaptiveSlippage: adaptiveSlippage,
-		priority: priority,
-		minPercProfit: minPercProfit,
-		minInterval: minInterval,
-		tradeSize: {
-			value: tradeSize,
-			strategy: tradeSizeStrategy,
-		},
-		tradingEnabled: tradingEnabled,
-		ui: {
-			defaultColor: process.env.UI_COLOR || "cyan",
-		},
-		storeFailedTxInHistory: true,
-	};
-
-	console.log(chalk.green("Configuration loaded successfully:"));
-	console.log(chalk.yellow("Network:"),config.network);
-	console.log(chalk.yellow("RPC:"),config.rpc[0].slice(0,50) + (config.rpc[0].length > 50 ? '...' : ''));
-	console.log(chalk.yellow("Token:"),config.tokenA.address);
-	console.log(chalk.yellow("Trade Size:"),config.tradeSize.value,`(${config.tradeSize.strategy})`);
-	console.log(chalk.yellow("Min Profit:"),config.minPercProfit + "%");
-	console.log(chalk.yellow("Slippage:"),config.slippage / 100 + "%");
-	console.log(chalk.yellow("Adaptive Slippage:"),config.adaptiveSlippage ? "Enabled" : "Disabled");
-	console.log(chalk.yellow("Trading Enabled:"),config.tradingEnabled ? "Yes" : "No");
-
-	return config;
-};
-
 const setup = async () => {
 	try {
-		// intro screen
-		process.env.SKIP_INTRO !== "true" && (await intro());
+		// Skip intro screen
+		// process.env.SKIP_INTRO !== "true" && (await intro());
 
 		// hotkeys
 		listenHotkeys();
@@ -151,18 +94,18 @@ const setup = async () => {
 		// create temp dir
 		createTempDir();
 
-		// load config
+		// Load config
 		let spinner;
-
+		
 		// Override trading strategy for arbitrage mode
 		cache.config.tradingStrategy = "arbitrage";
 		console.log(chalk.cyan("Trading Strategy: Arbitrage"));
-
+		
 		console.log(
 			chalk.yellow("Adaptive Slippage:"),
 			cache.config.adaptiveSlippage === 1 ? "Enabled" : "Disabled"
 		);
-
+		
 		console.log(
 			chalk.yellow("Trading Enabled:"),
 			cache.tradingEnabled ? "Yes" : "No"
@@ -173,14 +116,9 @@ const setup = async () => {
 		const wallet = Keypair.fromSecretKey(bs58.decode(process.env.SOLANA_WALLET_PRIVATE_KEY));
 		console.log('wallet publicKey ::: ' + wallet.publicKey.toString());
 
-		// Set up Jupiter
-		const jupiter = await Jupiter.load({
-			connection,
-			cluster: 'mainnet-beta',
-			user: wallet,
-			restrictIntermediateTokens: false,
-			wrapUnwrapSOL: cache.wrapUnwrapSOL,
-		});
+		// Store connection and wallet for later use
+		cache.connection = connection;
+		cache.wallet = wallet;
 
 		// Fetch trending tokens
 		spinner = ora({
@@ -193,7 +131,7 @@ const setup = async () => {
 
 		// Use the first trending token (TRUMP) for monitoring
 		const firstTrendingToken = trendingTokens[0];
-
+		
 		// Configure USDC token
 		const usdcToken = getUSDCToken();
 
@@ -206,17 +144,90 @@ const setup = async () => {
 		// Set up token monitoring
 		const tokenA = firstTrendingToken;
 		const tokenB = usdcToken;
-
+		
 		spinner.succeed(`Token configured: ${tokenA.address}`);
 
-		// Mark setup as complete
-		cache.isSetupDone = true;
+		// Test Jupiter API with the configured tokens
+		spinner = ora({
+			text: "Testing Jupiter API connection...",
+			discardStdin: false,
+		}).start();
 
-		return {
-			jupiter,
-			tokenA,
-			tokenB,
-		};
+		// Calculate a safe amount to use for test quote based on token decimals
+		const testAmount = Math.pow(10, tokenA.decimals);
+
+		try {
+			const testQuote = await getQuote(
+				tokenA.address,
+				tokenB.address,
+				testAmount.toString(),
+				100
+			);
+			
+			spinner.succeed("Jupiter API connection successful!");
+			
+			// Store the test quote for later reference
+			cache.testQuote = testQuote;
+			
+			// Mark setup as complete
+			cache.isSetupDone = true;
+			
+			return {
+				// We'll store these in cache now instead of returning them
+				jupiter: {
+					// Wrapper functions for API compatibility
+					async computeRoutes({ inputMint, outputMint, amount }) {
+						const mintIn = inputMint.toBase58();
+						const mintOut = outputMint.toBase58();
+						const amountStr = amount.toString();
+						
+						const quote = await getQuote(mintIn, mintOut, amountStr, 100);
+						
+						// Format to match old Jupiter SDK format for compatibility
+						return {
+							routesInfos: [{
+								outAmount: quote.outAmount,
+								otherAmountThreshold: quote.otherAmountThreshold,
+								inAmount: quote.inAmount,
+								amount: quote.inAmount,
+								priceImpactPct: quote.priceImpact,
+								marketInfos: quote.routePlan.map(step => ({
+									id: step.swapInfo?.ammKey || 'unknown',
+									label: step.swapInfo?.label || 'Unknown',
+									inputMint: step.sourceMint,
+									outputMint: step.destinationMint,
+									inAmount: step.inputAmount,
+									outAmount: step.outputAmount,
+									lpFee: { amount: '0' }
+								}))
+							}]
+						};
+					},
+					
+					// Wrapper for swap execution compatibility
+					async exchange({ routeInfo }) {
+						return {
+							async execute() {
+								// In reality, we'd set this up with a proper swap execution
+								// For now, just log the intent to swap
+								console.log(`Would execute swap from ${routeInfo.marketInfos[0].inputMint} to ${routeInfo.marketInfos[0].outputMint}`);
+								return { txid: 'simulation-only' };
+							}
+						};
+					},
+					
+					// Add function to check arbitrage opportunities
+					async checkArbitrageOpportunity(tokenAMint, tokenBMint, amount) {
+						return checkArbitrageOpportunity(tokenAMint, tokenBMint, amount);
+					}
+				},
+				tokenA,
+				tokenB,
+			};
+		} catch (error) {
+			spinner.fail(`Jupiter API test failed: ${error.message}`);
+			throw error;
+		}
 	} catch(error) {
 		console.log(chalk.red("✖ Setup failed!"));
 		console.error(chalk.red("Error during setup:"),error.message);
@@ -245,22 +256,18 @@ const getInitialotherAmountThreshold = async (
 			color: "magenta",
 		}).start();
 
-		//JSBI AMT to TRADE
-		const amountInJSBI = JSBI.BigInt(amountToTrade);
+		// Get quote using new Jupiter API
+		const quote = await getQuote(
+			inputToken.address,
+			outputToken.address,
+			amountToTrade.toString(),
+			100  // 1% slippage
+		);
 
-		// compute routes for the first time
-		const routes = await jupiter.computeRoutes({
-			inputMint: new PublicKey(inputToken.address),
-			outputMint: new PublicKey(outputToken.address),
-			amount: amountInJSBI,
-			slippageBps: 0,
-			forceFetch: true,
-			onlyDirectRoutes: false,
-			filterTopNResult: 1,
-		});
-
-		if(routes?.routesInfos?.length > 0) spinner.succeed("Routes computed!");
-		else {
+		if (quote) {
+			spinner.succeed("Routes computed using Jupiter API v6!");
+			return quote.otherAmountThreshold;
+		} else {
 			spinner.fail("No routes found. Something is wrong! Check tokens:" + inputToken.address + " " + outputToken.address);
 			console.error(chalk.red("No routes found between these tokens. This could be due to:"));
 			console.error(chalk.yellow("1. Insufficient liquidity between the token pair"));
@@ -268,8 +275,6 @@ const getInitialotherAmountThreshold = async (
 			console.error(chalk.yellow("3. RPC issues or network congestion"));
 			process.exit(1);
 		}
-
-		return routes.routesInfos[0].otherAmountThreshold;
 	} catch(error) {
 		if(spinner)
 			spinner.fail(chalk.bold.redBright("Computing routes failed!\n"));

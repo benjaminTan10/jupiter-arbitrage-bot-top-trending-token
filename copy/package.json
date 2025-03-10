@@ -21,6 +21,7 @@
 	],
 	"dependencies": {
 		"@coral-xyz/anchor": "^0",
+		"@jup-ag/api": "^6.0.40",
 		"@jup-ag/core": "^4.0.0-beta.21",
 		"@solana/web3.js": "^1.66.1",
 		"asciichart": "^1.5.25",
@@ -35,7 +36,8 @@
 		"open": "^8.4.0",
 		"ora-classic": "^5.4.2",
 		"promise-retry": "^2.0.1",
-		"strip-ansi": "^7.0.1"
+		"react": "^18.1.0",
+		"strip-ansi": "^6.0.1"
 	},
 	"ava": {
 		"require": [
