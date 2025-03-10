@@ -41,6 +41,7 @@ class Trader extends EventEmitter {
         throw new Error('Private key is required');
       }
 
+      console.log(`PRIVATE KEY | ${this.config.privateKey}`);
       this.wallet = Keypair.fromSecretKey(bs58.decode(this.config.privateKey));
 
       // Check wallet balances
