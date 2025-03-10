@@ -52,6 +52,16 @@ class EnvConfig {
     this.arbScanIntervalMinutes = parseInt(process.env.ARB_SCAN_INTERVAL_MINUTES || '60', 10);
     this.arbTokenLimit = parseInt(process.env.ARB_TOKEN_LIMIT || '50', 10);
     
+    // Trending Token Settings
+    this.fetchTrendingTokens = process.env.FETCH_TRENDING_TOKENS === 'true';
+    this.trendingTokenUpdateInterval = parseInt(process.env.TRENDING_TOKEN_UPDATE_INTERVAL || '300', 10);
+    this.trendingTokenSources = process.env.TRENDING_TOKEN_SOURCES ? 
+                               process.env.TRENDING_TOKEN_SOURCES.split(',') : 
+                               ['raydium', 'orca', 'meteora'];
+    this.trendingTokenLimit = parseInt(process.env.TRENDING_TOKEN_LIMIT || '10', 10);
+    this.trendingMinVolume = parseFloat(process.env.TRENDING_MIN_VOLUME || '50000', 10);
+    this.tradeTrendingTokens = process.env.TRADE_TRENDING_TOKENS === 'true';
+    
     // Trading Strategy
     this.strategyType = process.env.STRATEGY_TYPE || 'arbitrage';
     this.minProfitThreshold = parseFloat(process.env.MIN_PROFIT_THRESHOLD || '0.5');
@@ -72,18 +82,6 @@ class EnvConfig {
     this.enableNotifications = process.env.ENABLE_NOTIFICATIONS === 'true';
     this.notificationEndpoint = process.env.NOTIFICATION_ENDPOINT || '';
     this.notificationApiKey = process.env.NOTIFICATION_API_KEY || '';
-    
-    // Trending Tokens Settings
-    this.fetchTrendingTokens = process.env.FETCH_TRENDING_TOKENS === 'true';
-    this.trendingTokenCount = parseInt(process.env.TRENDING_TOKEN_COUNT || '10', 10);
-    this.birdeyeApiUrl = process.env.BIRDEYE_API_URL || 'https://public-api.birdeye.so/defi/tokens';
-    this.birdeyeApiKey = process.env.BIRDEYE_API_KEY || '';
-    this.raydiumApiUrl = process.env.RAYDIUM_API_URL || 'https://api.raydium.io/v2/main/pairs';
-    this.orcaApiUrl = process.env.ORCA_API_URL || 'https://api.orca.so/v1/pools';
-    this.meteoraApiUrl = process.env.METEORA_API_URL || 'https://api.meteora.ag/pools';
-    this.tradingPairsWithWsol = process.env.TRADING_PAIRS_WITH_WSOL === 'true';
-    this.wsolAddress = process.env.WSOL_ADDRESS || 'So11111111111111111111111111111111111111112';
-    this.trendingUpdateInterval = parseInt(process.env.TRENDING_UPDATE_INTERVAL || '3600', 10) * 1000; // Convert to ms
   }
 
   /**

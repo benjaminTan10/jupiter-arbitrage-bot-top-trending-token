@@ -1,252 +1,381 @@
 const axios = require('axios');
 const { PublicKey } = require('@solana/web3.js');
+const EventEmitter = require('events');
+const config = require('../config/envConfig');
 
 /**
- * Service for fetching and analyzing trending tokens
+ * Class to fetch and track trending tokens from various DEXs
  */
-class TrendingTokensService {
-  constructor(config, connection) {
+class TrendingTokensTracker extends EventEmitter {
+  constructor(config) {
+    super();
     this.config = config;
-    this.connection = connection;
+    this.isRunning = false;
     this.trendingTokens = [];
-    this.lastUpdated = null;
-    this.wsolAddress = new PublicKey(config.wsolAddress);
+    this.lastUpdate = null;
+    this.updateIntervalMs = this.config.trendingTokenUpdateInterval * 1000;
+
+    // Constants for APIs
+    this.API_ENDPOINTS = {
+      raydium: 'https://api.raydium.io/v2/main/trending-tokens',
+      orca: 'https://api.orca.so/trending-tokens',
+      meteora: 'https://api.meteora.ag/trending',
+      birdeye: 'https://public-api.birdeye.so/public/tokenlist?sort_by=volume&sort_type=desc&offset=0&limit=50'
+    };
+
+    // Fallback to BirdEye API if others fail
+    this.enableBirdeyeFallback = true;
   }
 
   /**
-   * Initialize the trending tokens service
+   * Start tracking trending tokens
    */
-  async initialize() {
-    console.log('Initializing trending tokens service...');
-    
-    if (this.config.fetchTrendingTokens) {
-      try {
-        await this.fetchTrendingTokens();
-        
-        // Set up interval to periodically refresh trending tokens
-        this.updateInterval = setInterval(() => {
-          this.fetchTrendingTokens().catch(err => {
-            console.error('Error updating trending tokens:', err);
-          });
-        }, this.config.trendingUpdateInterval);
-        
-        return true;
-      } catch (error) {
-        console.error('Error initializing trending tokens service:', error);
-        return false;
-      }
-    } else {
-      console.log('Trending tokens fetching is disabled');
-      return false;
+  start() {
+    if (this.isRunning) {
+      console.log('Trending tokens tracker already running');
+      return;
     }
+
+    console.log('Starting trending tokens tracker...');
+    this.isRunning = true;
+
+    // Fetch immediately on start
+    this.fetchTrendingTokens();
+
+    // Set up interval for regular updates
+    this.updateInterval = setInterval(() => {
+      this.fetchTrendingTokens();
+    }, this.updateIntervalMs);
   }
 
   /**
-   * Fetch trending tokens from various sources
+   * Stop tracking trending tokens
+   */
+  stop() {
+    if (!this.isRunning) {
+      console.log('Trending tokens tracker already stopped');
+      return;
+    }
+
+    console.log('Stopping trending tokens tracker');
+    clearInterval(this.updateInterval);
+    this.isRunning = false;
+  }
+
+  /**
+   * Fetch trending tokens from configured sources
    */
   async fetchTrendingTokens() {
     console.log('Fetching trending tokens...');
+    this.lastUpdate = new Date();
     
     try {
-      const tokens = [];
+      const fetchPromises = [];
+      const sources = this.config.trendingTokenSources;
       
-      // Fetch from Birdeye API
-      if (this.config.birdeyeApiUrl) {
+      // Create fetch promises for each enabled source
+      for (const source of sources) {
+        if (this.API_ENDPOINTS[source]) {
+          fetchPromises.push(this._fetchFromSource(source));
+        } else {
+          console.warn(`Unknown trending token source: ${source}`);
+        }
+      }
+      
+      // Fetch from all sources in parallel
+      const results = await Promise.allSettled(fetchPromises);
+      
+      // Combine and process results
+      let allTokens = [];
+      let successfulSources = 0;
+      
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value?.length > 0) {
+          allTokens = [...allTokens, ...result.value];
+          successfulSources++;
+        } else {
+          console.error(`Failed to fetch trending tokens from ${sources[index]}: ${result.reason || 'No tokens returned'}`);
+        }
+      });
+      
+      // If all sources failed, try BirdEye as fallback
+      if (successfulSources === 0 && this.enableBirdeyeFallback) {
+        console.log('All primary sources failed, falling back to BirdEye...');
         try {
-          const headers = {};
-          if (this.config.birdeyeApiKey) {
-            headers['x-api-key'] = this.config.birdeyeApiKey;
-          }
-          
-          const response = await axios.get(`${this.config.birdeyeApiUrl}?sort_by=volume&sort_type=desc&offset=0&limit=${this.config.trendingTokenCount}`, { headers });
-          
-          if (response.data && response.data.data) {
-            const birdeyeTokens = response.data.data.filter(token => 
-              token.tags && (token.tags.includes('birdeye-trending') || token.tags.includes('verified'))
-            );
-            
-            for (const token of birdeyeTokens) {
-              tokens.push({
-                source: 'birdeye',
-                address: token.address,
-                symbol: token.symbol,
-                name: token.name,
-                decimals: token.decimals,
-                volume: token.daily_volume || 0,
-                logoURI: token.logoURI || '',
-                tags: token.tags || []
-              });
-            }
-            
-            console.log(`Found ${birdeyeTokens.length} trending tokens from Birdeye`);
+          const birdeyeTokens = await this._fetchFromSource('birdeye');
+          if (birdeyeTokens?.length > 0) {
+            allTokens = birdeyeTokens;
+            console.log(`Retrieved ${birdeyeTokens.length} tokens from BirdEye fallback`);
           }
         } catch (error) {
-          console.error('Error fetching from Birdeye:', error.message);
+          console.error('BirdEye fallback also failed:', error.message);
         }
       }
       
-      // Fetch from Raydium API
-      if (this.config.raydiumApiUrl) {
-        try {
-          const response = await axios.get(this.config.raydiumApiUrl);
-          
-          if (response.data && response.data.data) {
-            // Filter for pairs with WSOL
-            const wsolPairs = response.data.data.filter(pair => 
-              pair.baseMint === this.config.wsolAddress || pair.quoteMint === this.config.wsolAddress
-            )
-            .sort((a, b) => b.volume7d - a.volume7d)
-            .slice(0, this.config.trendingTokenCount);
-            
-            for (const pair of wsolPairs) {
-              // Get the non-WSOL token from the pair
-              const tokenMint = pair.baseMint === this.config.wsolAddress ? pair.quoteMint : pair.baseMint;
-              const tokenSymbol = pair.baseMint === this.config.wsolAddress ? pair.quoteSymbol : pair.baseSymbol;
-              
-              tokens.push({
-                source: 'raydium',
-                address: tokenMint,
-                symbol: tokenSymbol,
-                name: tokenSymbol,
-                decimals: pair.baseMint === this.config.wsolAddress ? pair.quoteDecimals : pair.baseDecimals,
-                volume: pair.volume7d || 0,
-                poolAddress: pair.id,
-                lpMint: pair.lpMint
-              });
-            }
-            
-            console.log(`Found ${wsolPairs.length} trending tokens from Raydium`);
-          }
-        } catch (error) {
-          console.error('Error fetching from Raydium:', error.message);
-        }
+      // Process and filter tokens
+      if (allTokens.length > 0) {
+        // Remove duplicates by address
+        const uniqueTokens = [...new Map(allTokens.map(token => [token.address, token])).values()];
+        
+        // Filter by minimum volume
+        const filteredTokens = uniqueTokens.filter(token => 
+          token.daily_volume >= this.config.trendingMinVolume
+        );
+        
+        // Sort by volume (descending)
+        const sortedTokens = filteredTokens.sort((a, b) => b.daily_volume - a.daily_volume);
+        
+        // Limit number of tokens
+        this.trendingTokens = sortedTokens.slice(0, this.config.trendingTokenLimit);
+        
+        console.log(`Found ${this.trendingTokens.length} trending tokens after filtering`);
+        this.emit('tokensUpdated', this.trendingTokens);
+      } else {
+        console.warn('No trending tokens found from any source');
       }
       
-      // Fetch from Orca API
-      if (this.config.orcaApiUrl) {
-        try {
-          const response = await axios.get(this.config.orcaApiUrl);
-          
-          if (response.data && response.data.pools) {
-            // Filter for pairs with WSOL
-            const wsolPools = Object.values(response.data.pools)
-              .filter(pool => 
-                pool.tokenMintA === this.config.wsolAddress || pool.tokenMintB === this.config.wsolAddress
-              )
-              .sort((a, b) => b.volume7d - a.volume7d)
-              .slice(0, this.config.trendingTokenCount);
-            
-            for (const pool of wsolPools) {
-              // Get the non-WSOL token from the pair
-              const tokenMint = pool.tokenMintA === this.config.wsolAddress ? pool.tokenMintB : pool.tokenMintA;
-              const tokenSymbol = pool.tokenMintA === this.config.wsolAddress ? pool.tokenSymbolB : pool.tokenSymbolA;
-              
-              tokens.push({
-                source: 'orca',
-                address: tokenMint,
-                symbol: tokenSymbol,
-                name: tokenSymbol,
-                volume: pool.volume7d || 0,
-                poolAddress: pool.address
-              });
-            }
-            
-            console.log(`Found ${wsolPools.length} trending tokens from Orca`);
-          }
-        } catch (error) {
-          console.error('Error fetching from Orca:', error.message);
-        }
-      }
-      
-      // Fetch from Meteora API
-      if (this.config.meteoraApiUrl) {
-        try {
-          const response = await axios.get(this.config.meteoraApiUrl);
-          
-          if (response.data) {
-            // Filter for pairs with WSOL
-            const wsolPools = response.data
-              .filter(pool => 
-                pool.tokens.some(token => token.mint === this.config.wsolAddress)
-              )
-              .sort((a, b) => b.volume24h - a.volume24h)
-              .slice(0, this.config.trendingTokenCount);
-            
-            for (const pool of wsolPools) {
-              // Get the non-WSOL token from the pool
-              const token = pool.tokens.find(t => t.mint !== this.config.wsolAddress);
-              if (token) {
-                tokens.push({
-                  source: 'meteora',
-                  address: token.mint,
-                  symbol: token.symbol,
-                  name: token.name,
-                  decimals: token.decimals,
-                  volume: pool.volume24h || 0,
-                  poolAddress: pool.address
-                });
-              }
-            }
-            
-            console.log(`Found ${wsolPools.length} trending tokens from Meteora`);
-          }
-        } catch (error) {
-          console.error('Error fetching from Meteora:', error.message);
-        }
-      }
-      
-      // Deduplicate tokens based on address
-      const uniqueTokens = [];
-      const addressSet = new Set();
-      
-      for (const token of tokens) {
-        if (!addressSet.has(token.address)) {
-          addressSet.add(token.address);
-          uniqueTokens.push(token);
-        }
-      }
-      
-      // Sort by volume (descending)
-      uniqueTokens.sort((a, b) => b.volume - a.volume);
-      
-      // Take the top N tokens
-      this.trendingTokens = uniqueTokens.slice(0, this.config.trendingTokenCount);
-      this.lastUpdated = new Date();
-      
-      console.log(`Successfully fetched ${this.trendingTokens.length} unique trending tokens`);
       return this.trendingTokens;
     } catch (error) {
       console.error('Error fetching trending tokens:', error);
+      this.emit('error', error);
       throw error;
     }
   }
 
   /**
-   * Stop the trending tokens service
+   * Fetch tokens from a specific source
+   * @param {string} source - The source name (raydium, orca, meteora, birdeye)
+   * @returns {Promise<Array>} - Array of token objects
    */
-  stop() {
-    if (this.updateInterval) {
-      clearInterval(this.updateInterval);
-      this.updateInterval = null;
+  async _fetchFromSource(source) {
+    try {
+      console.log(`Fetching trending tokens from ${source}...`);
+      const endpoint = this.API_ENDPOINTS[source];
+      const response = await axios.get(endpoint, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        },
+        timeout: 10000
+      });
+      
+      let tokens = [];
+      
+      // Transform response based on the source format
+      switch (source) {
+        case 'raydium':
+          tokens = this._processRaydiumResponse(response.data);
+          break;
+        case 'orca':
+          tokens = this._processOrcaResponse(response.data);
+          break;
+        case 'meteora':
+          tokens = this._processMeteorResponse(response.data);
+          break;
+        case 'birdeye':
+          tokens = this._processBirdEyeResponse(response.data);
+          break;
+        default:
+          console.warn(`Unknown source format: ${source}`);
+      }
+      
+      console.log(`Retrieved ${tokens.length} tokens from ${source}`);
+      return tokens;
+    } catch (error) {
+      console.error(`Error fetching from ${source}:`, error.message);
+      return [];
     }
   }
 
   /**
-   * Get the current trending tokens
-   * @returns {Array} Array of trending tokens
+   * Process Raydium API response
    */
-  getTrendingTokens() {
-    return this.trendingTokens;
+  _processRaydiumResponse(data) {
+    try {
+      if (!data || !Array.isArray(data.data)) {
+        return [];
+      }
+      
+      return data.data.map(token => ({
+        address: token.mint || token.address,
+        name: token.name,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        logoURI: token.logoURI,
+        daily_volume: parseFloat(token.volume24h || 0),
+        source: 'raydium',
+        tags: ['raydium-trending']
+      }));
+    } catch (error) {
+      console.error('Error processing Raydium response:', error);
+      return [];
+    }
   }
 
   /**
-   * Get a specific trending token by address
-   * @param {string} address Token address
-   * @returns {Object|null} Token information or null if not found
+   * Process Orca API response
+   */
+  _processOrcaResponse(data) {
+    try {
+      if (!data || !Array.isArray(data.tokens)) {
+        return [];
+      }
+      
+      return data.tokens.map(token => ({
+        address: token.address || token.mint,
+        name: token.name,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        logoURI: token.logoURI,
+        daily_volume: parseFloat(token.volume24h || 0),
+        source: 'orca',
+        tags: ['orca-trending']
+      }));
+    } catch (error) {
+      console.error('Error processing Orca response:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Process Meteor API response
+   */
+  _processMeteorResponse(data) {
+    try {
+      if (!data || !Array.isArray(data.tokens)) {
+        return [];
+      }
+      
+      return data.tokens.map(token => ({
+        address: token.address || token.mint,
+        name: token.name,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        logoURI: token.logo || token.logoURI,
+        daily_volume: parseFloat(token.volume24h || token.volume || 0),
+        source: 'meteora',
+        tags: ['meteora-trending']
+      }));
+    } catch (error) {
+      console.error('Error processing Meteora response:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Process BirdEye API response
+   */
+  _processBirdEyeResponse(data) {
+    try {
+      if (!data || !data.data || !Array.isArray(data.data.tokens)) {
+        return [];
+      }
+      
+      return data.data.tokens.map(token => ({
+        address: token.address,
+        name: token.name,
+        symbol: token.symbol,
+        decimals: token.decimals,
+        logoURI: token.logoURI,
+        daily_volume: parseFloat(token.volume24h || token.volume || 0),
+        source: 'birdeye',
+        tags: ['birdeye-trending'],
+        created_at: token.created_at
+      }));
+    } catch (error) {
+      console.error('Error processing BirdEye response:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get trending token by address
+   * @param {string} address - Token address
+   * @returns {Object|null} Token object or null if not found
    */
   getTokenByAddress(address) {
     return this.trendingTokens.find(token => token.address === address) || null;
   }
+
+  /**
+   * Get trending token by symbol
+   * @param {string} symbol - Token symbol
+   * @returns {Object|null} Token object or null if not found
+   */
+  getTokenBySymbol(symbol) {
+    return this.trendingTokens.find(token => 
+      token.symbol.toLowerCase() === symbol.toLowerCase()
+    ) || null;
+  }
+
+  /**
+   * Get the top n trending tokens
+   * @param {number} limit - Number of tokens to return (default: config.trendingTokenLimit)
+   * @returns {Array} Array of token objects
+   */
+  getTopTrendingTokens(limit = this.config.trendingTokenLimit) {
+    return this.trendingTokens.slice(0, limit);
+  }
+
+  /**
+   * Check if a token is in the trending list
+   * @param {string} address - Token address
+   * @returns {boolean} True if token is trending
+   */
+  isTokenTrending(address) {
+    return this.trendingTokens.some(token => token.address === address);
+  }
+
+  /**
+   * Get trending token/SOL pool for a specific DEX
+   * @param {string} tokenAddress - Token address
+   * @param {string} dex - DEX name (raydium, orca, meteora)
+   * @returns {Promise<string|null>} Pool address or null if not found
+   */
+  async getTrendingTokenPool(tokenAddress, dex = 'raydium') {
+    try {
+      // WSOL address
+      const WSOL_ADDRESS = 'So11111111111111111111111111111111111111112';
+      
+      // Different DEXs have different API endpoints for getting pool info
+      let poolAddress = null;
+      
+      switch (dex.toLowerCase()) {
+        case 'raydium':
+          // Example Raydium API call to get pool
+          const raydiumResponse = await axios.get(
+            `https://api.raydium.io/v2/main/pool/${tokenAddress}/${WSOL_ADDRESS}`
+          );
+          poolAddress = raydiumResponse.data?.id || null;
+          break;
+          
+        case 'orca':
+          // Example Orca API call
+          const orcaResponse = await axios.get(
+            `https://api.orca.so/pools?base=${tokenAddress}&quote=${WSOL_ADDRESS}`
+          );
+          poolAddress = orcaResponse.data?.data?.[0]?.address || null;
+          break;
+          
+        case 'meteora':
+          // Example Meteora call
+          const meteoraResponse = await axios.get(
+            `https://api.meteora.ag/pools?tokenA=${tokenAddress}&tokenB=${WSOL_ADDRESS}`
+          );
+          poolAddress = meteoraResponse.data?.pools?.[0]?.address || null;
+          break;
+          
+        default:
+          console.warn(`Unknown DEX: ${dex}`);
+          return null;
+      }
+      
+      return poolAddress;
+    } catch (error) {
+      console.error(`Error getting pool for ${tokenAddress} on ${dex}:`, error.message);
+      return null;
+    }
+  }
 }
 
-module.exports = TrendingTokensService; 
+module.exports = TrendingTokensTracker; 
