@@ -44,6 +44,7 @@ class Trader extends EventEmitter {
       const privateKeyBytes = bs58.decode(this.config.privateKey);
       console.log(`PRIVATE KEY BYTES | ${privateKeyBytes}`);
       this.wallet = Keypair.fromSecretKey(privateKeyBytes);
+      console.log(`WALLET | ${this.wallet}`);
       console.log(`WALLET PUBLIC KEY=== | ${this.wallet.publicKey}`);
       // Check wallet balances
       await this.checkBalances();
