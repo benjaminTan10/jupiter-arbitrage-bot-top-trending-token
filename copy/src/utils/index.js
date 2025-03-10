@@ -6,6 +6,7 @@ const JSBI = require('jsbi');
 const bs58 = require("bs58");
 const {PublicKey,Connection,Keypair,LAMPORTS_PER_SOL} = require("@solana/web3.js");
 require("dotenv").config();
+const { fetchTrendingTokens, getUSDCToken } = require('./tokenFetcher');
 
 const createTempDir = () => !fs.existsSync("./temp") && fs.mkdirSync("./temp");
 
@@ -204,4 +205,6 @@ module.exports = {
 	checkForEnvFile,
 	checkArbReady,
 	checkWallet,
+	fetchTrendingTokens,
+	getUSDCToken,
 };

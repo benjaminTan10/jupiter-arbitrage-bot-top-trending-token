@@ -17,6 +17,7 @@ const {toDecimal,createTempDir} = require("../utils");
 const {intro,listenHotkeys} = require("./ui");
 const {setTimeout} = require("timers/promises");
 const cache = require("./cache");
+const {fetchTrendingTokens,getUSDCToken} = require("../utils/tokenFetcher");
 const wrapUnwrapSOL = cache.wrapUnwrapSOL;
 
 // Account balance code
@@ -72,25 +73,14 @@ const balanceCheck = async (checkToken) => {
 };
 
 // Handle Balance Errors Messaging
-const checkTokenABalance = async (tokenA,initialTradingBalance) => {
+const checkTokenABalance = async (tokenObj,requiredAmount) => {
 	try {
-		// Check the balance of TokenA to make sure there is enough to trade with
-		var realbalanceTokenA = await balanceCheck(tokenA);
-		bal1 = toDecimal(realbalanceTokenA,tokenA.decimals);
-		bal2 = toDecimal(initialTradingBalance,tokenA.decimals);
-
-		if(realbalanceTokenA < initialTradingBalance) {
-			throw new Error(`\x1b[93mThere is insufficient balance in your wallet of ${tokenA.symbol}\x1b[0m
-			\nYou currently only have \x1b[93m${bal1}\x1b[0m ${tokenA.symbol}.
-			\nTo run the bot you need \x1b[93m${bal2}\x1b[0m ${tokenA.symbol}.
-			\nEither add more ${tokenA.symbol} to your wallet or lower the amount below ${bal1}.\n`);
-		}
-		return realbalanceTokenA;
+		const realBalance = await balanceCheck(tokenObj);
+		console.log('Wallet Balance:',toDecimal(String(realBalance),tokenObj.decimals),tokenObj.symbol);
+		return realBalance;
 	} catch(error) {
-		// Handle errors gracefully
-		console.error(`\n====================\n\n${error.message}\n====================\n`);
-		// Return an appropriate error code or rethrow the error if necessary
-		process.exit(1); // Exiting with a non-zero code to indicate failure
+		console.error('Error looking up balance:',error);
+		return -1;
 	}
 }
 
@@ -151,188 +141,89 @@ const loadConfigFromEnv = () => {
 };
 
 const setup = async () => {
-	let spinner;
 	try {
-		console.log(chalk.bold.cyan("\n========== ARBITRAGE BOT SETUP ==========\n"));
+		// intro screen
+		process.env.SKIP_INTRO !== "true" && (await intro());
 
-		// Load configuration from environment variables
-		const config = loadConfigFromEnv();
+		// hotkeys
+		listenHotkeys();
 
-		// Store configuration in cache
-		cache.config = config;
+		// create temp dir
+		createTempDir();
 
-		// Fetch Jupiter token list
+		// load config
+		let spinner;
+
+		// Override trading strategy for arbitrage mode
+		cache.config.tradingStrategy = "arbitrage";
+		console.log(chalk.cyan("Trading Strategy: Arbitrage"));
+
+		console.log(
+			chalk.yellow("Adaptive Slippage:"),
+			cache.config.adaptiveSlippage === 1 ? "Enabled" : "Disabled"
+		);
+
+		console.log(
+			chalk.yellow("Trading Enabled:"),
+			cache.tradingEnabled ? "Yes" : "No"
+		);
+
+		// Create a connection to the Solana network
+		const connection = new Connection(process.env.DEFAULT_RPC);
+		const wallet = Keypair.fromSecretKey(bs58.decode(process.env.SOLANA_WALLET_PRIVATE_KEY));
+		console.log('wallet publicKey ::: ' + wallet.publicKey.toString());
+
+		// Set up Jupiter
+		const jupiter = await Jupiter.load({
+			connection,
+			cluster: 'mainnet-beta',
+			user: wallet,
+			restrictIntermediateTokens: false,
+			wrapUnwrapSOL: cache.wrapUnwrapSOL,
+		});
+
+		// Fetch trending tokens
 		spinner = ora({
 			text: "Fetching token list...",
 			discardStdin: false,
 		}).start();
 
-		// Create connection to RPC
-		const connection = new Connection(config.rpc[0],{
-			commitment: "processed",
-			confirmTransactionInitialTimeout: 60000,
-		});
-
-		// Create wallet keypair from private key
-		const wallet = Keypair.fromSecretKey(
-			bs58.decode(process.env.SOLANA_WALLET_PRIVATE_KEY)
-		);
-		console.log("wallet publicKey :::",wallet.publicKey.toString());
-		// Store wallet public key in cache
-		cache.walletpubkey = wallet.publicKey.toString().slice(0,8) + "...";
-		cache.walletpubkeyfull = wallet.publicKey.toString();
-
-		// Check SOL balance
-		// const solBalance = await connection.getBalance(wallet.publicKey);
-		// if(solBalance < 0.001 * LAMPORTS_PER_SOL) {
-		// 	spinner.fail("Insufficient SOL balance for transactions");
-		// 	console.error(chalk.red(`Your wallet needs at least 0.01 SOL for transactions. Current balance: ${solBalance / LAMPORTS_PER_SOL} SOL`));
-		// 	process.exit(1);
-		// }
-
-		// Fetch Jupiter token list
-		const tokenList = await (
-			await fetch("https://tokens.jup.ag/tokens?tags=birdeye-trending")
-		).json();
-
-		// Store token list in temp directory
-		createTempDir();
-		fs.writeFileSync("./temp/tokenlist.json",JSON.stringify(tokenList));
+		const trendingTokens = await fetchTrendingTokens();
 		spinner.succeed("Token list fetched and saved!");
 
-		// Find required tokens in token list
-		const tokenA = tokenList[0].address;
-		const tokenB = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+		// Use the first trending token (TRUMP) for monitoring
+		const firstTrendingToken = trendingTokens[0];
 
-		if(!tokenA) {
-			spinner.fail(`Token with address ${config.tokenA.address} not found in Jupiter token list`);
-			process.exit(1);
-		}
+		// Configure USDC token
+		const usdcToken = getUSDCToken();
 
-		if(!tokenB) {
-			spinner.fail("USDC token not found in Jupiter token list");
-			process.exit(1);
-		}
+		// Configure the tokens for the bot
+		spinner = ora({
+			text: `Configuring token: ${firstTrendingToken.symbol}`,
+			discardStdin: false,
+		}).start();
 
-		// Store tokens in cache config
-		cache.config.tokenA = tokenA;
-		cache.config.tokenB = tokenB;
+		// Set up token monitoring
+		const tokenA = firstTrendingToken;
+		const tokenB = usdcToken;
 
-		spinner.succeed(`Token configured: ${tokenA}`);
+		spinner.succeed(`Token configured: ${tokenA.address}`);
 
-		// Initialize Jupiter
-		const jupiter = await Jupiter.load({
-			connection,
-			cluster: "mainnet-beta",
-			user: wallet,
-			wrapUnwrapSOL: true,
-			routeCacheDuration: 10_000, // 10 seconds
-		});
-
-		// Check if wallet can connect
-		try {
-			spinner.text = "Connecting to wallet...";
-			// Get SOL balance to check connectivity
-			const balance = await connection.getBalance(wallet.publicKey);
-			spinner.succeed(`Wallet connected: ${wallet.publicKey.toString().slice(0,8)}...`);
-		} catch(error) {
-			spinner.fail("Failed to connect to wallet");
-			console.error(chalk.red("Error connecting to wallet:"),error.message);
-			process.exit(1);
-		}
-
-		// Check if RPC can connect
-		try {
-			spinner.text = "Connecting to RPC...";
-			await connection.getLatestBlockhash();
-			spinner.succeed(`Connected to RPC: ${config.rpc[0].slice(0,20)}...`);
-		} catch(error) {
-			spinner.fail("Failed to connect to RPC");
-			console.error(chalk.red("Error connecting to RPC:"),error.message);
-			process.exit(1);
-		}
-
-		// Initialize Jupiter with configuration
-		spinner.text = "Loading Jupiter SDK...";
-		jupiter.setExcludeDexes({
-			'Aldrin': true,
-			'Crema': true,
-			'GooseFX': false,
-			'Invariant': true,
-			'Lifinity': false,
-			'Mercurial': false,
-			'Meteora': false,
-			'Raydium': false,
-			'Raydium CLMM': true,
-			'Saber': false,
-			'Serum': false,
-			'Orca': false,
-			'Orca (Whirlpools)': false,
-			'Stepn': false,
-			'Cropper': false,
-			'Sencha': false,
-			'Saber (Decimals)': false,
-			'Dradex': true,
-			'Balansol': true,
-			'Openbook': false,
-			'Marco Polo': false,
-			'Oasis': false,
-			'BonkSwap': false,
-			'Phoenix': false,
-			'Symmetry': true,
-			'Unknown': true
-		});
-
-		// Jupiter is initialized, check token balance
-		try {
-			spinner.text = `Checking ${tokenA.symbol} balance...`;
-			const tokenBalance = await balanceCheck(tokenA);
-			const uiBalance = toDecimal(tokenBalance,tokenA.decimals);
-
-			// Check if balance is sufficient for configured trade size
-			const requiredBalance = config.tradeSize.value;
-			const uiRequiredBalance = toDecimal(requiredBalance * (10 ** tokenA.decimals),tokenA.decimals);
-
-			if(parseFloat(uiBalance) < parseFloat(uiRequiredBalance)) {
-				spinner.fail(`Insufficient ${tokenA.symbol} balance for configured trade size`);
-				console.error(chalk.red(`Your wallet has ${uiBalance} ${tokenA.symbol}, but the configured trade size requires ${uiRequiredBalance} ${tokenA.symbol}`));
-				console.error(chalk.yellow(`Please add more ${tokenA.symbol} to your wallet or reduce the TRADE_SIZE_SOL in .env`));
-				process.exit(1);
-			}
-
-			spinner.succeed(`${tokenA.symbol} balance is sufficient: ${uiBalance}`);
-		} catch(error) {
-			spinner.fail(`Failed to check ${tokenA.symbol} balance`);
-			console.error(chalk.red("Error checking token balance:"),error.message);
-			process.exit(1);
-		}
-
+		// Mark setup as complete
 		cache.isSetupDone = true;
-		spinner.succeed("Jupiter V4 SDK loaded successfully!");
 
-		console.log(chalk.bold.green("\n========== SETUP COMPLETE ==========\n"));
-		console.log(chalk.cyan("The bot will now start trading with the configured settings."));
-		console.log(chalk.cyan("Press [CTRL]+[C] to exit, [S] to toggle trading, [H] for help.\n"));
-
-		return {jupiter,tokenA,tokenB,wallet};
+		return {
+			jupiter,
+			tokenA,
+			tokenB,
+		};
 	} catch(error) {
-		if(spinner) {
-			spinner.fail(chalk.red("Setup failed!"));
-		}
+		console.log(chalk.red("✖ Setup failed!"));
 		console.error(chalk.red("Error during setup:"),error.message);
-		console.error(chalk.yellow("Detailed error:"),error.stack);
-
-		// Provide specific error guidance based on error type
-		if(error.message.includes("balance")) {
-			console.error(chalk.yellow("SOLUTION: Add more funds to your wallet or reduce the trade size in .env"));
-		} else if(error.message.includes("RPC")) {
-			console.error(chalk.yellow("SOLUTION: Check your RPC URL in .env or try a different RPC provider"));
-		} else if(error.message.includes("token")) {
-			console.error(chalk.yellow("SOLUTION: Verify the token address in .env or use a different token"));
-		} else {
-			console.error(chalk.yellow("SOLUTION: Check your .env configuration and ensure your wallet has sufficient funds"));
-		}
-
+		console.error(chalk.red("Detailed error:"),error);
+		console.log(chalk.yellowBright("SOLUTION: Check your .env configuration and ensure your wallet has sufficient funds"));
+		logExit(1,error);
+		process.exitCode = 1;
 		process.exit(1);
 	}
 };
@@ -386,6 +277,7 @@ const getInitialotherAmountThreshold = async (
 		console.error(chalk.yellow("This could be due to RPC issues, insufficient liquidity, or invalid token configuration"));
 		logExit(1,error);
 		process.exitCode = 1;
+		process.exit(1);
 	}
 };
 
