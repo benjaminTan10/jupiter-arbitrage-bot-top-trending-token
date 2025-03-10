@@ -68,6 +68,7 @@ class Trader extends EventEmitter {
           let mintPubkey;
           try {
             mintPubkey = new PublicKey(this.config.mintAddress);
+            console.log(`MINT | ${this.config.mintAddress} | ${mintPubkey}`);
           } catch (err) {
             console.error(`Invalid mint address format: ${this.config.mintAddress}`);
             this.balances[this.config.mintAddress] = 0;
