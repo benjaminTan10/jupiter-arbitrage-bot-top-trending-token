@@ -1,6 +1,7 @@
 const config = require('./config/envConfig');
 const { displayIntro } = require('./utils/display');
 const Trader = require('./trading/trader');
+const TrendingTokensTracker = require('./trading/trendingTokens');
 const { Connection } = require('@solana/web3.js');
 const { initializeWallet } = require('./utils/wallet');
 
@@ -20,6 +21,7 @@ async function main() {
   console.log('RPC URL:', config.rpcUrl);
   console.log('Trading Enabled:', config.tradingEnabled);
   console.log('Strategy Type:', config.strategyType);
+  console.log('Fetch Trending Tokens:', config.fetchTrendingTokens);
   
   try {
     // Test connection to RPC
@@ -27,8 +29,19 @@ async function main() {
     const blockHeight = await connection.getBlockHeight();
     console.log('Connected to Solana. Current block height:', blockHeight);
     
+    // Initialize trending tokens tracker if enabled
+    let trendingTracker = null;
+    if (config.fetchTrendingTokens) {
+      console.log('Initializing trending tokens tracker...');
+      trendingTracker = new TrendingTokensTracker(config);
+      trendingTracker.on('tokensUpdated', (tokens) => {
+        console.log(`Updated ${tokens.length} trending tokens`);
+      });
+      trendingTracker.start();
+    }
+    
     // Initialize the trader
-    const trader = new Trader(config);
+    const trader = new Trader(config, trendingTracker);
     
     // Set up event handlers
     trader.on('tradingSuccess', (opportunity) => {
@@ -54,6 +67,9 @@ async function main() {
     process.on('SIGINT', async () => {
       console.log('Shutting down...');
       trader.stopTrading();
+      if (trendingTracker) {
+        trendingTracker.stop();
+      }
       console.log('Goodbye!');
       process.exit(0);
     });

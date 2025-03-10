@@ -8,7 +8,7 @@ const JSBI = require('jsbi');
  * Main trader class that handles trading operations
  */
 class Trader extends EventEmitter {
-  constructor(config) {
+  constructor(config,trendingTokensTracker = null) {
     super();
     this.config = config;
     this.isRunning = false;
@@ -19,6 +19,7 @@ class Trader extends EventEmitter {
     this.jupiter = null;
     this.wallet = null;
     this.balances = {};
+    this.trendingTokensTracker = trendingTokensTracker;
 
     // Convert update interval to milliseconds
     this.updateIntervalMs = parseInt(this.config.updateInterval,10);
@@ -151,10 +152,15 @@ class Trader extends EventEmitter {
       // 1. Fetch current prices
       await this.fetchPrices();
 
-      // 2. Find trading opportunities
+      // 2. Check trending tokens if enabled
+      if(this.config.fetchTrendingTokens && this.config.tradeTrendingTokens && this.trendingTokensTracker) {
+        await this.checkTrendingTokenOpportunities();
+      }
+
+      // 3. Find trading opportunities
       await this.findOpportunities();
 
-      // 3. Execute trades if enabled
+      // 4. Execute trades if enabled
       if(this.config.tradingEnabled && this.opportunities.length > 0) {
         await this.executeTrades();
       }
@@ -197,6 +203,7 @@ class Trader extends EventEmitter {
       if(solToUsdcRoutes.routesInfos && solToUsdcRoutes.routesInfos.length > 0) {
         const bestRoute = solToUsdcRoutes.routesInfos[0];
         const price = parseFloat(bestRoute.outAmount) / 1_000_000; // USDC has 6 decimals
+        this.currentPrices['SOL/USDC'] = price;
         this.currentPrices['WSOL/USDC'] = price;
       }
 
@@ -236,13 +243,164 @@ class Trader extends EventEmitter {
   }
 
   /**
+   * Check trending tokens for trading opportunities
+   */
+  async checkTrendingTokenOpportunities() {
+    if(!this.trendingTokensTracker) {
+      console.log('Trending tokens tracker not available');
+      return;
+    }
+
+    console.log('Checking trending tokens for opportunities...');
+
+    try {
+      // Get top trending tokens
+      const trendingTokens = this.trendingTokensTracker.getTopTrendingTokens();
+
+      if(trendingTokens.length === 0) {
+        console.log('No trending tokens available');
+        return;
+      }
+
+      console.log(`Found ${trendingTokens.length} trending tokens to analyze`);
+
+      // WSOL address for pool pairing
+      const WSOL_ADDRESS = 'So11111111111111111111111111111111111111112';
+      const USDC_ADDRESS = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+      // The amount of SOL to use in price checks (in smallest unit)
+      const tradeAmountSol = JSBI.BigInt(this.config.tradeSizeSol * 1e9); // Convert SOL to lamports
+
+      for(const token of trendingTokens) {
+        try {
+          console.log(`Analyzing trending token: ${token.symbol} (${token.address})`);
+
+          // Check price of token/WSOL
+          try {
+            // Get token decimals
+            const tokenInfo = await this.connection.getParsedAccountInfo(new PublicKey(token.address));
+            const tokenDecimals = token.decimals || tokenInfo.value?.data.parsed.info.decimals || 9;
+            const oneToken = JSBI.BigInt(Math.pow(10,tokenDecimals));
+
+            // Get price of token in SOL
+            const tokenToSolRoutes = await this.jupiter.computeRoutes({
+              inputMint: new PublicKey(token.address),
+              outputMint: new PublicKey(WSOL_ADDRESS),
+              amount: oneToken,
+              slippageBps: 50, // 0.5%
+              forceFetch: true,
+            });
+
+            if(tokenToSolRoutes.routesInfos && tokenToSolRoutes.routesInfos.length > 0) {
+              const bestRoute = tokenToSolRoutes.routesInfos[0];
+              const tokenPriceInSol = parseFloat(bestRoute.outAmount) / 1e9;
+              this.currentPrices[`${token.address}/WSOL`] = tokenPriceInSol;
+
+              console.log(`Token ${token.symbol} price in SOL: ${tokenPriceInSol}`);
+
+              // Also check token price in USDC for profit calculation
+              const tokenToUsdcRoutes = await this.jupiter.computeRoutes({
+                inputMint: new PublicKey(token.address),
+                outputMint: new PublicKey(USDC_ADDRESS),
+                amount: oneToken,
+                slippageBps: 50,
+                forceFetch: true,
+              });
+
+              if(tokenToUsdcRoutes.routesInfos && tokenToUsdcRoutes.routesInfos.length > 0) {
+                const bestUsdcRoute = tokenToUsdcRoutes.routesInfos[0];
+                const tokenPriceInUsdc = parseFloat(bestUsdcRoute.outAmount) / 1e6;
+                this.currentPrices[`${token.address}/USDC`] = tokenPriceInUsdc;
+
+                console.log(`Token ${token.symbol} price in USDC: ${tokenPriceInUsdc}`);
+
+                // Check for arbitrage opportunity
+                const solPrice = this.currentPrices['SOL/USDC'] || 0;
+
+                // Calculate potential profit from SOL -> token -> USDC -> SOL cycle
+                const solToTokenRoutes = await this.jupiter.computeRoutes({
+                  inputMint: new PublicKey(WSOL_ADDRESS),
+                  outputMint: new PublicKey(token.address),
+                  amount: tradeAmountSol,
+                  slippageBps: 50,
+                  forceFetch: true,
+                });
+
+                if(solToTokenRoutes.routesInfos && solToTokenRoutes.routesInfos.length > 0) {
+                  const bestTokenRoute = solToTokenRoutes.routesInfos[0];
+                  const expectedTokens = JSBI.BigInt(bestTokenRoute.outAmount);
+
+                  // Now check what we'd get by converting these tokens to USDC
+                  const tokenToUsdcRoutes = await this.jupiter.computeRoutes({
+                    inputMint: new PublicKey(token.address),
+                    outputMint: new PublicKey(USDC_ADDRESS),
+                    amount: expectedTokens,
+                    slippageBps: 50,
+                    forceFetch: true,
+                  });
+
+                  if(tokenToUsdcRoutes.routesInfos && tokenToUsdcRoutes.routesInfos.length > 0) {
+                    const bestUsdcRoute = tokenToUsdcRoutes.routesInfos[0];
+                    const expectedUsdc = parseFloat(bestUsdcRoute.outAmount) / 1e6;
+
+                    // Calculate profit
+                    const inputSol = parseFloat(tradeAmountSol) / 1e9;
+                    const inputValueUsdc = inputSol * solPrice;
+                    const profitUsdc = expectedUsdc - inputValueUsdc;
+                    const profitPercentage = (profitUsdc / inputValueUsdc) * 100;
+
+                    console.log(`Potential profit for ${token.symbol}: $${profitUsdc.toFixed(2)} (${profitPercentage.toFixed(2)}%)`);
+
+                    // If profit meets threshold, add as opportunity
+                    if(profitPercentage > this.config.minProfitThreshold) {
+                      const opportunity = {
+                        type: 'trending',
+                        fromToken: 'SOL',
+                        toToken: token.symbol,
+                        tokenAddress: token.address,
+                        route: bestTokenRoute,
+                        secondRoute: bestUsdcRoute,
+                        inputAmount: inputSol,
+                        expectedOutputAmount: expectedUsdc,
+                        potentialProfit: profitPercentage,
+                        estimatedValue: profitUsdc,
+                        source: token.source || 'trending',
+                      };
+
+                      this.opportunities.push(opportunity);
+                      console.log(`Added trending token opportunity for ${token.symbol} with ${profitPercentage.toFixed(2)}% profit`);
+                    }
+                  }
+                }
+              }
+            }
+          } catch(error) {
+            console.error(`Error checking trending token ${token.symbol}:`,error.message);
+          }
+
+          // Add a small delay between tokens to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve,200));
+        } catch(error) {
+          console.error(`Error processing trending token ${token.symbol}:`,error.message);
+        }
+      }
+
+      console.log(`Finished analyzing trending tokens. Found ${this.opportunities.length} opportunities.`);
+
+    } catch(error) {
+      console.error('Error checking trending token opportunities:',error);
+    }
+  }
+
+  /**
    * Find trading opportunities based on current prices
    */
   async findOpportunities() {
     console.log('Finding trading opportunities...');
 
-    // Clear previous opportunities
-    this.opportunities = [];
+    // We don't clear previous opportunities here as we want to keep trending token opportunities
+    // Only clear if you don't want to combine different types of opportunities
+    // this.opportunities = [];
 
     try {
       // Define parameters for opportunity calculation
@@ -279,6 +437,7 @@ class Trader extends EventEmitter {
 
         if(potentialProfit > this.config.minProfitThreshold) {
           const opportunity = {
+            type: 'standard',
             fromToken: tokenA === 'So11111111111111111111111111111111111111112' ? 'SOL' : tokenA,
             toToken: 'USDC',
             route: bestRoute,
@@ -289,13 +448,16 @@ class Trader extends EventEmitter {
           };
 
           this.opportunities.push(opportunity);
-          console.log('Found opportunity:',opportunity);
+          console.log('Found standard opportunity:',opportunity);
         } else {
-          console.log(`No profitable opportunity found. Potential profit: ${potentialProfit.toFixed(2)}%, minimum threshold: ${this.config.minProfitThreshold}%`);
+          console.log(`No profitable standard opportunity found. Potential profit: ${potentialProfit.toFixed(2)}%, minimum threshold: ${this.config.minProfitThreshold}%`);
         }
       } else {
         console.log('No routes found for the specified tokens');
       }
+
+      // Sort opportunities by potential profit (highest first)
+      this.opportunities.sort((a,b) => b.potentialProfit - a.potentialProfit);
 
       return this.opportunities;
     } catch(error) {
@@ -324,33 +486,96 @@ class Trader extends EventEmitter {
       try {
         console.log(`Executing trade: ${opportunity.fromToken} -> ${opportunity.toToken}`);
 
-        // Prepare the transaction
-        const {execute} = await this.jupiter.exchange({
-          routeInfo: opportunity.route,
-        });
+        if(opportunity.type === 'trending' && opportunity.secondRoute) {
+          // For trending token opportunities, we need two transactions
+          console.log(`Trending token trade: SOL -> ${opportunity.toToken} -> USDC`);
 
-        // Execute the transaction
-        const result = await execute();
+          // First transaction: SOL -> Trending Token
+          const {execute: execute1} = await this.jupiter.exchange({
+            routeInfo: opportunity.route,
+          });
 
-        if(result.error) {
-          console.error('Trade execution failed:',result.error);
-          this.emit('tradingError',new Error(result.error.message || 'Transaction failed'));
-        } else {
-          console.log(`Trade executed successfully! Txid: ${result.txid}`);
-          console.log(`Input amount: ${opportunity.inputAmount} ${opportunity.fromToken}`);
-          console.log(`Output amount: ${result.outputAmount} ${opportunity.toToken}`);
-          console.log(`Profit: $${opportunity.estimatedValue.toFixed(2)}`);
+          const result1 = await execute1();
+
+          if(result1.error) {
+            console.error('First transaction failed:',result1.error);
+            this.emit('tradingError',new Error(result1.error.message || 'First transaction failed'));
+            continue;
+          }
+
+          console.log(`First transaction successful! Txid: ${result1.txid}`);
+          console.log(`Received ${result1.outputAmount} ${opportunity.toToken}`);
+
+          // Wait a moment before second transaction
+          await new Promise(resolve => setTimeout(resolve,2000));
+
+          // Second transaction: Trending Token -> USDC
+          const {execute: execute2} = await this.jupiter.exchange({
+            routeInfo: opportunity.secondRoute,
+          });
+
+          const result2 = await execute2();
+
+          if(result2.error) {
+            console.error('Second transaction failed:',result2.error);
+            this.emit('tradingError',new Error(result2.error.message || 'Second transaction failed'));
+            continue;
+          }
+
+          console.log(`Second transaction successful! Txid: ${result2.txid}`);
+          console.log(`Received ${result2.outputAmount} USDC`);
+
+          // Calculate actual profit
+          const inputValueUsdc = opportunity.inputAmount * (this.currentPrices['SOL/USDC'] || 0);
+          const outputValueUsdc = parseFloat(result2.outputAmount) / 1e6;
+          const actualProfit = outputValueUsdc - inputValueUsdc;
+          const actualProfitPercentage = (actualProfit / inputValueUsdc) * 100;
+
+          console.log(`Complete trade cycle successful!`);
+          console.log(`Input: ${opportunity.inputAmount} SOL (≈$${inputValueUsdc.toFixed(2)})`);
+          console.log(`Output: ${outputValueUsdc.toFixed(2)} USDC`);
+          console.log(`Actual Profit: $${actualProfit.toFixed(2)} (${actualProfitPercentage.toFixed(2)}%)`);
 
           // Emit success event
           this.emit('tradingSuccess',{
             ...opportunity,
-            txid: result.txid,
-            actualOutputAmount: result.outputAmount,
+            txid1: result1.txid,
+            txid2: result2.txid,
+            actualOutputAmount: outputValueUsdc,
+            actualProfit,
+            actualProfitPercentage
           });
 
-          // Update balances after successful trade
-          await this.checkBalances();
+        } else {
+          // Standard opportunity
+          // Prepare the transaction
+          const {execute} = await this.jupiter.exchange({
+            routeInfo: opportunity.route,
+          });
+
+          // Execute the transaction
+          const result = await execute();
+
+          if(result.error) {
+            console.error('Trade execution failed:',result.error);
+            this.emit('tradingError',new Error(result.error.message || 'Transaction failed'));
+          } else {
+            console.log(`Trade executed successfully! Txid: ${result.txid}`);
+            console.log(`Input amount: ${opportunity.inputAmount} ${opportunity.fromToken}`);
+            console.log(`Output amount: ${result.outputAmount} ${opportunity.toToken}`);
+            console.log(`Profit: $${opportunity.estimatedValue.toFixed(2)}`);
+
+            // Emit success event
+            this.emit('tradingSuccess',{
+              ...opportunity,
+              txid: result.txid,
+              actualOutputAmount: result.outputAmount,
+            });
+          }
         }
+
+        // Update balances after successful trade
+        await this.checkBalances();
 
         // Add a small delay between trades to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve,1000));
@@ -359,6 +584,9 @@ class Trader extends EventEmitter {
         this.emit('tradingError',error);
       }
     }
+
+    // Clear opportunities after execution
+    this.opportunities = [];
   }
 }
 
