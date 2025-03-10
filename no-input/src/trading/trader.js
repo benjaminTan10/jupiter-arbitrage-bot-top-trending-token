@@ -4,6 +4,29 @@ const {Connection,Keypair,PublicKey} = require('@solana/web3.js');
 const bs58 = require('bs58');
 const JSBI = require('jsbi');
 
+// Helper function to adapt to Jupiter v2 API
+async function getJupiterRoutes(jupiter,inputMint,outputMint,amount,slippageBps) {
+  // For Jupiter v2
+  if(jupiter.exchange) {
+    return jupiter.computeRoutes({
+      inputMint,
+      outputMint,
+      amount,
+      slippageBps,
+      forceFetch: true
+    });
+  }
+
+  // For older Jupiter versions
+  return jupiter.route({
+    inputMint,
+    outputMint,
+    amount,
+    slippage: slippageBps / 100,
+    forceFetch: true
+  });
+}
+
 /**
  * Main trader class that handles trading operations
  */
@@ -192,13 +215,7 @@ class Trader extends EventEmitter {
 
       // Check price of SOL in USDC
       const amountInLamports = JSBI.BigInt(1_000_000_000); // 1 SOL in lamports
-      const solToUsdcRoutes = await this.jupiter.computeRoutes({
-        inputMint: new PublicKey('So11111111111111111111111111111111111111112'),
-        outputMint: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
-        amount: amountInLamports,
-        slippageBps: 10, // 0.1%
-        forceFetch: true,
-      });
+      const solToUsdcRoutes = await getJupiterRoutes(this.jupiter,new PublicKey('So11111111111111111111111111111111111111112'),new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),amountInLamports,10);
 
       if(solToUsdcRoutes.routesInfos && solToUsdcRoutes.routesInfos.length > 0) {
         const bestRoute = solToUsdcRoutes.routesInfos[0];
@@ -216,13 +233,7 @@ class Trader extends EventEmitter {
           const tokenAmountInSmallestUnit = JSBI.BigInt(Math.pow(10,tokenDecimals));
 
           // Token to USDC price
-          const tokenToUsdcRoutes = await this.jupiter.computeRoutes({
-            inputMint: new PublicKey(this.config.mintAddress),
-            outputMint: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
-            amount: tokenAmountInSmallestUnit,
-            slippageBps: 10,
-            forceFetch: true,
-          });
+          const tokenToUsdcRoutes = await getJupiterRoutes(this.jupiter,new PublicKey(this.config.mintAddress),new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),tokenAmountInSmallestUnit,10);
 
           if(tokenToUsdcRoutes.routesInfos && tokenToUsdcRoutes.routesInfos.length > 0) {
             const bestRoute = tokenToUsdcRoutes.routesInfos[0];
@@ -283,13 +294,7 @@ class Trader extends EventEmitter {
             const oneToken = JSBI.BigInt(Math.pow(10,tokenDecimals));
 
             // Get price of token in SOL
-            const tokenToSolRoutes = await this.jupiter.computeRoutes({
-              inputMint: new PublicKey(token.address),
-              outputMint: new PublicKey(WSOL_ADDRESS),
-              amount: oneToken,
-              slippageBps: 50, // 0.5%
-              forceFetch: true,
-            });
+            const tokenToSolRoutes = await getJupiterRoutes(this.jupiter,new PublicKey(token.address),new PublicKey(WSOL_ADDRESS),oneToken,50);
 
             if(tokenToSolRoutes.routesInfos && tokenToSolRoutes.routesInfos.length > 0) {
               const bestRoute = tokenToSolRoutes.routesInfos[0];
@@ -299,13 +304,7 @@ class Trader extends EventEmitter {
               console.log(`Token ${token.symbol} price in SOL: ${tokenPriceInSol}`);
 
               // Also check token price in USDC for profit calculation
-              const tokenToUsdcRoutes = await this.jupiter.computeRoutes({
-                inputMint: new PublicKey(token.address),
-                outputMint: new PublicKey(USDC_ADDRESS),
-                amount: oneToken,
-                slippageBps: 50,
-                forceFetch: true,
-              });
+              const tokenToUsdcRoutes = await getJupiterRoutes(this.jupiter,new PublicKey(token.address),new PublicKey(USDC_ADDRESS),oneToken,50);
 
               if(tokenToUsdcRoutes.routesInfos && tokenToUsdcRoutes.routesInfos.length > 0) {
                 const bestUsdcRoute = tokenToUsdcRoutes.routesInfos[0];
@@ -318,26 +317,14 @@ class Trader extends EventEmitter {
                 const solPrice = this.currentPrices['SOL/USDC'] || 0;
 
                 // Calculate potential profit from SOL -> token -> USDC -> SOL cycle
-                const solToTokenRoutes = await this.jupiter.computeRoutes({
-                  inputMint: new PublicKey(WSOL_ADDRESS),
-                  outputMint: new PublicKey(token.address),
-                  amount: tradeAmountSol,
-                  slippageBps: 50,
-                  forceFetch: true,
-                });
+                const solToTokenRoutes = await getJupiterRoutes(this.jupiter,new PublicKey(WSOL_ADDRESS),new PublicKey(token.address),tradeAmountSol,50);
 
                 if(solToTokenRoutes.routesInfos && solToTokenRoutes.routesInfos.length > 0) {
                   const bestTokenRoute = solToTokenRoutes.routesInfos[0];
                   const expectedTokens = JSBI.BigInt(bestTokenRoute.outAmount);
 
                   // Now check what we'd get by converting these tokens to USDC
-                  const tokenToUsdcRoutes = await this.jupiter.computeRoutes({
-                    inputMint: new PublicKey(token.address),
-                    outputMint: new PublicKey(USDC_ADDRESS),
-                    amount: expectedTokens,
-                    slippageBps: 50,
-                    forceFetch: true,
-                  });
+                  const tokenToUsdcRoutes = await getJupiterRoutes(this.jupiter,new PublicKey(token.address),new PublicKey(USDC_ADDRESS),expectedTokens,50);
 
                   if(tokenToUsdcRoutes.routesInfos && tokenToUsdcRoutes.routesInfos.length > 0) {
                     const bestUsdcRoute = tokenToUsdcRoutes.routesInfos[0];
@@ -415,13 +402,7 @@ class Trader extends EventEmitter {
       const amountToTrade = JSBI.BigInt(this.config.tradeSizeSol * Math.pow(10,tokenADecimals));
 
       // Compute routes for a potential trade
-      const routes = await this.jupiter.computeRoutes({
-        inputMint: new PublicKey(tokenA),
-        outputMint: new PublicKey(tokenB),
-        amount: amountToTrade,
-        slippageBps: parseInt(this.config.slippage,10) || 50,
-        forceFetch: true,
-      });
+      const routes = await getJupiterRoutes(this.jupiter,new PublicKey(tokenA),new PublicKey(tokenB),amountToTrade,parseInt(this.config.slippage,10) || 50);
 
       if(routes.routesInfos && routes.routesInfos.length > 0) {
         const bestRoute = routes.routesInfos[0];
@@ -491,9 +472,7 @@ class Trader extends EventEmitter {
           console.log(`Trending token trade: SOL -> ${opportunity.toToken} -> USDC`);
 
           // First transaction: SOL -> Trending Token
-          const {execute: execute1} = await this.jupiter.exchange({
-            routeInfo: opportunity.route,
-          });
+          const {execute: execute1} = await getJupiterRoutes(this.jupiter,opportunity.route,opportunity.secondRoute);
 
           const result1 = await execute1();
 
@@ -510,9 +489,7 @@ class Trader extends EventEmitter {
           await new Promise(resolve => setTimeout(resolve,2000));
 
           // Second transaction: Trending Token -> USDC
-          const {execute: execute2} = await this.jupiter.exchange({
-            routeInfo: opportunity.secondRoute,
-          });
+          const {execute: execute2} = await getJupiterRoutes(this.jupiter,opportunity.secondRoute,opportunity.route);
 
           const result2 = await execute2();
 
@@ -549,9 +526,7 @@ class Trader extends EventEmitter {
         } else {
           // Standard opportunity
           // Prepare the transaction
-          const {execute} = await this.jupiter.exchange({
-            routeInfo: opportunity.route,
-          });
+          const {execute} = await getJupiterRoutes(this.jupiter,opportunity.route,opportunity.route);
 
           // Execute the transaction
           const result = await execute();

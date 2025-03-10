@@ -1,0 +1,17 @@
+diff --git a/node_modules/rpc-websockets/package.json b/node_modules/rpc-websockets/package.json
+index e77dc7f..f936308 100644
+--- a/node_modules/rpc-websockets/package.json
++++ b/node_modules/rpc-websockets/package.json
+@@ -6,6 +6,12 @@
+   "browser": "dist/browser/index.js",
+   "types": "dist/lib/index.d.ts",
+   "scripts": { },
++  "exports": {
++    ".": "./dist/index.js",
++    "./dist/lib/client": "./dist/lib/client.js",
++    "./dist/lib/server": "./dist/lib/server.js",
++    "./dist/lib/*": "./dist/lib/*"
++  },
+   "repository": { },
+   "keywords": [ ],
+   "dependencies": { } 
