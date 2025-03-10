@@ -1,11 +1,9 @@
-const ui = require("cliui")({ width: 140 });
 const chalk = require("chalk");
 const moment = require("moment");
 const chart = require("asciichart");
 const JSBI = require('jsbi');
 
 const { toDecimal } = require("../../utils");
-const package = require("../../../package.json");
 const cache = require("../cache");
 
 function printToConsole({
@@ -47,7 +45,7 @@ function printToConsole({
 			let statusPerformance;
 			if (cache.swappingRightNow) {
 				statusPerformance = performance.now() - cache.performanceOfTxStart;
-				statusMessage = chalk.bold[
+				statusMessage = chalk[
 					statusPerformance < 45000
 						? "greenBright"
 						: statusPerformance < 60000
@@ -57,7 +55,7 @@ function printToConsole({
 			} else if (cache.fetchingResultsFromSolscan) {
 				statusPerformance =
 					performance.now() - cache.fetchingResultsFromSolscanStart;
-				statusMessage = chalk.bold[
+				statusMessage = chalk[
 					statusPerformance < 45000
 						? "greenBright"
 						: statusPerformance < 90000
@@ -68,362 +66,90 @@ function printToConsole({
 
 			// refresh console before print
 			console.clear();
-			ui.resetOutput();
+			
+			// Simple header
+			console.log(chalk.bold.cyan("\n========== ARBITRAGE BOT RUNNING ==========\n"));
+			
+			// Display current status
+			console.log(chalk.yellow("TIME:"), date.toLocaleString());
+			console.log(chalk.yellow("ITERATION:"), i, `(${cache.iterationPerMinute.value} i/min)`);
+			console.log(chalk.yellow("RPC:"), cache.ui.hideRpc ? `${cache.config.rpc[0].slice(0, 5)}...${cache.config.rpc[0].slice(-5)}` : cache.config.rpc[0]);
+			console.log(chalk.yellow("TOKEN:"), `${tokenA.symbol} (${tokenA.address.slice(0, 8)}...)`);
+			console.log(chalk.yellow("TRADING ENABLED:"), cache.tradingEnabled ? "YES" : "NO");
+			console.log(chalk.yellow("STATUS:"), statusMessage);
+			console.log(chalk.yellow("WALLET:"), cache.walletpubkey);
+			
+			// Line break
+			console.log("\n" + chalk.gray("-".repeat(50)) + "\n");
+			
+			// Display simulated profit
+			console.log(chalk.yellow("SIMULATED PROFIT:"), 
+				chalk[simulatedProfit > 0 ? "green" : "red"](`${simulatedProfit.toFixed(4)} %`));
+			
+			// Display routes
+			console.log(chalk.yellow("ROUTES AVAILABLE:"),
+				`${cache.availableRoutes[cache.sideBuy ? "buy" : "sell"]}`);
+				
+			// Line break
+			console.log("\n" + chalk.gray("-".repeat(50)) + "\n");
+			
+			// Display token balances and profits
+			console.log(chalk.yellow("CURRENT BALANCE:"), 
+				`${toDecimal(String(cache.currentBalance.tokenA), tokenA.decimals)} ${tokenA.symbol}`);
+			
+			console.log(chalk.yellow("INITIAL BALANCE:"), 
+				`${toDecimal(String(cache.initialBalance.tokenA), tokenA.decimals)} ${tokenA.symbol}`);
+			
+			console.log(chalk.yellow("PROFIT:"), 
+				chalk[cache.currentProfit.tokenA > 0 ? "green" : "red"](`${cache.currentProfit.tokenA.toFixed(4)} %`));
+			
+			// Line break
+			console.log("\n" + chalk.gray("-".repeat(50)) + "\n");
 
-			// show HOTKEYS HELP
-			if (cache.ui.showHelp) {
-				ui.div(
-					chalk.gray("[H] - show/hide help"),
-					chalk.gray("[CTRL]+[C] - exit"),
-					chalk.gray("[I] - incognito RPC")
-				);
-				ui.div(
-					chalk.gray("[L] - show/hide latency chart"),
-					chalk.gray("[P] - show/hide profit chart"),
-					chalk.gray("[T] - show/hide trade history")
-				);
-				ui.div(
-					chalk.gray("[E] - force execution"),
-					chalk.gray("[R] - revert back swap"),
-					chalk.gray("[S] - simulation mode switch")
-				);
-				ui.div(" ");
-			}
-
-			ui.div(
-				{
-					text: `TIMESTAMP: ${chalk[cache.ui.defaultColor](
-						date.toLocaleString()
-					)}`,
-				},
-				{
-					text: `I: ${
-						i % 2 === 0
-							? chalk[cache.ui.defaultColor].bold(i)
-							: chalk[cache.ui.defaultColor](i)
-					} | ${chalk.bold[cache.ui.defaultColor](
-						cache.iterationPerMinute.value
-					)} i/min`,
-				},
-				{
-					text: `RPC: ${chalk[cache.ui.defaultColor](
-						cache.ui.hideRpc
-							? `${cache.config.rpc[0].slice(
-									0,
-									5
-							  )}...${cache.config.rpc[0].slice(-5)}`
-							: cache.config.rpc[0]
-					)}`,
-				},
-			);
-
-			const performanceOfRouteCompColor =
-				performanceOfRouteComp < 1000 ? cache.ui.defaultColor : "redBright";
-
-			ui.div(
-				{
-					text: `STARTED: ${chalk[cache.ui.defaultColor](
-						moment(cache.startTime).fromNow()
-					)}`,
-				},
-				{
-					text: `LOOKUP (ROUTE): ${chalk.bold[performanceOfRouteCompColor](
-						performanceOfRouteComp.toFixed()
-					)} ms`,
-				},
-				{
-					text: `MIN INTERVAL: ${chalk[cache.ui.defaultColor](
-						cache.config.minInterval
-					)} ms QUEUE: ${chalk[cache.ui.defaultColor](
-						Object.keys(cache.queue).length
-					)}/${chalk[cache.ui.defaultColor](cache.queueThrottle)}`,
-				}
-			);
-
-			ui.div(
-				" ",
-				" ",
-				Object.values(cache.queue)
-					.map(
-						(v) => `${chalk[v === 0 ? "green" : v < 0 ? "yellow" : "red"]("●")}`
-					)
-					.join(" ")
-			);
-
-			if (cache.ui.showPerformanceOfRouteCompChart)
-				ui.div(
-					chart.plot(cache.chart.performanceOfRouteComp, {
-						padding: " ".repeat(10),
-						height: 5,
-					})
-				);
-
-			// Show pubkey for identification of bot instance
-			const pubkey = cache.ui.hideRpc ? 'hidden' : cache.walletpubkey;
-
-			ui.div(`ARB PROTOCOL ${package.version} - (${pubkey})`);
-			ui.div(chalk.gray("-".repeat(140)));
-
-			ui.div(
-				`${
-					cache.tradingEnabled
-						? "TRADING"
-						: chalk.bold.magentaBright("SIMULATION")
-				}: ${chalk.bold[cache.ui.defaultColor](inputToken.symbol)} ${
-					cache.config.tradingStrategy === "arbitrage"
-						? ""
-						: `-> ${chalk.bold[cache.ui.defaultColor](outputToken.symbol)}`
-				}`,
-				`ROUTES: ${chalk.bold.yellowBright(
-					cache.availableRoutes[cache.sideBuy ? "buy" : "sell"]
-				)}`,
-				`STRATEGY: ${chalk.bold[cache.ui.defaultColor](
-					cache.config.tradingStrategy
-				)}`,
-				{
-					text: statusMessage,
-				}
-			);
-			ui.div("");
-
-			ui.div("BUY", "SELL", " ", " ");
-
-			ui.div(
-				{
-					text: `SUCCESS : ${chalk.bold.green(cache.tradeCounter.buy.success)}`,
-				},
-				{
-					text: `SUCCESS: ${chalk.bold.green(cache.tradeCounter.sell.success)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				}
-			);
-			ui.div(
-				{
-					text: `FAIL: ${chalk.bold.red(cache.tradeCounter.buy.fail)}`,
-				},
-				{
-					text: `FAIL: ${chalk.bold.red(cache.tradeCounter.sell.fail)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				}
-			);
-			ui.div("");
-
-			ui.div(
-				{
-					text: `IN:  ${chalk.yellowBright(
-						toDecimal(String(route.inAmount), inputToken.decimals)
-					)} ${chalk[cache.ui.defaultColor](inputToken.symbol)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: `SLIPPAGE: ${chalk.magentaBright(
-						`${
-							cache.config.slippage + " BPS"
-						}`
-					)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				}
-			);
-
-			ui.div(
-				{
-					text: `OUT: ${chalk[simulatedProfit > 0 ? "greenBright" : "red"](
-						toDecimal(String(route.outAmount), outputToken.decimals)
-					)} ${chalk[cache.ui.defaultColor](outputToken.symbol)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: `MIN. OUT: ${chalk.magentaBright(
-						toDecimal(String(route.otherAmountThreshold), outputToken.decimals)
-					)}`,
-				},
-				{
-					text: `W/UNWRAP SOL: ${chalk[cache.ui.defaultColor](
-						cache.wrapUnwrapSOL ? "on" : "off"
-					)}`,
-				},
-				{
-					text: " ",
-				}
-			);
-
-			ui.div(
-				{
-					text: `PROFIT: ${chalk[simulatedProfit > 0 ? "greenBright" : "red"](
-						simulatedProfit.toFixed(2)
-					)} % ${chalk.gray(`(${cache?.config?.minPercProfit})`)}`,
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				},
-				{
-					text: " ",
-				}
-			);
-
-			ui.div(" ");
-
-			ui.div("CURRENT BALANCE", "LAST BALANCE", "INIT BALANCE", "PROFIT", " ");
-
-			ui.div(
-				`${chalk[JSBI.GT(cache.currentBalance.tokenA, 0) ? "yellowBright" : "gray"](
-					toDecimal(cache.currentBalance.tokenA, tokenA.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenA.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.lastBalance.tokenA, 0) ? "yellowBright" : "gray"](
-					toDecimal(cache.lastBalance.tokenA, tokenA.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenA.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.initialBalance.tokenA,0) ? "yellowBright" : "gray"](
-					toDecimal(cache.initialBalance.tokenA, tokenA.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenA.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.currentProfit.tokenA,0) ? "greenBright" : "redBright"](
-					cache.currentProfit.tokenA.toFixed(2)
-				)} %`,
-				" "
-			);
-
-			ui.div(
-				`${chalk[JSBI.GT(cache.currentBalance.tokenB,0) ? "yellowBright" : "gray"](
-					toDecimal(String(cache.currentBalance.tokenB), tokenB.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenB.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.lastBalance.tokenB,0) ? "yellowBright" : "gray"](
-					toDecimal(String(cache.lastBalance.tokenB), tokenB.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenB.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.initialBalance.tokenB,0) ? "yellowBright" : "gray"](
-					toDecimal(String(cache.initialBalance.tokenB), tokenB.decimals)
-				)} ${chalk[cache.ui.defaultColor](tokenB.symbol)}`,
-
-				`${chalk[JSBI.GT(cache.currentProfit.tokenB,0) ? "greenBright" : "redBright"](
-					cache.currentProfit.tokenB.toFixed(2)
-				)} %`,
-				" "
-			);
-
-			ui.div(chalk.gray("-".repeat(140)));
-			ui.div("");
-
+			// Display profit chart if enabled
 			if (cache.ui.showProfitChart) {
-				ui.div(
-					chart.plot(cache.chart.spottedMax[cache.sideBuy ? "buy" : "sell"], {
-						padding: " ".repeat(10),
-						height: 4,
-						colors: [simulatedProfit > 0 ? chart.lightgreen : chart.lightred],
-					})
-				);
-
-				ui.div("");
+				console.log(chalk.yellow("PROFIT CHART:"));
+				console.log(chart.plot(cache.chart.spottedMax[cache.sideBuy ? "buy" : "sell"], {
+					height: 6,
+					colors: [simulatedProfit > 0 ? chart.green : chart.red],
+				}));
+				console.log();
 			}
 
-			ui.div(
-				{
-					text: `MAX (BUY): ${chalk[cache.ui.defaultColor](
-						cache.maxProfitSpotted.buy.toFixed(2)
-					)} %`,
-				},
-				{
-					text: `MAX (SELL): ${chalk[cache.ui.defaultColor](
-						cache.maxProfitSpotted.sell.toFixed(2)
-					)} %`,
-				},
-				{
-					text: `ADAPTIVE SLIPPAGE: ${chalk[cache.ui.defaultColor](
-						(cache.config.adaptiveSlippage==1) ? 'ON' : 'OFF'
-					)}`,
-				},
-			);
+			// Display max profit spotted
+			console.log(chalk.yellow("MAX PROFIT SPOTTED:"), 
+				`${cache.maxProfitSpotted.buy.toFixed(4)} %`);
+			
+			console.log(chalk.yellow("ADAPTIVE SLIPPAGE:"), 
+				(cache.config.adaptiveSlippage==1) ? 'ENABLED' : 'DISABLED');
+			
+			// Line break
+			console.log("\n" + chalk.gray("-".repeat(50)) + "\n");
 
-			ui.div("");
-			ui.div(chalk.gray("-".repeat(140)));
-			ui.div("");
-
-			if (cache.ui.showTradeHistory) {
-				ui.div(
-					{ text: `TIMESTAMP` },
-					{ text: `SIDE` },
-					{ text: `IN` },
-					{ text: `OUT` },
-					{ text: `PROFIT` },
-					{ text: `EXP. OUT` },
-					{ text: `EXP. PROFIT` },
-					{ text: `ERROR` }
-				);
-
-				ui.div(" ");
-
-				if (cache?.tradeHistory?.length > 0) {
-					const tableData = [...cache.tradeHistory].slice(-5);
-					tableData.map((entry) =>
-						ui.div(
-							{ text: `${entry.date}`, border: true },
-							{ text: `${entry.buy ? "BUY" : "SELL"}`, border: true },
-							{ text: `${entry.inAmount} ${entry.inputToken}`, border: true },
-							{ text: `${entry.outAmount} ${entry.outputToken}`, border: true },
-							{
-								text: `${
-									chalk[
-										entry.profit > 0
-											? "greenBright"
-											: entry.profit < 0
-											? "redBright"
-											: "cyanBright"
-									](isNaN(entry.profit) ? "0" : entry.profit.toFixed(2)) + " %"
-								}`,
-								border: true,
-							},
-							{
-								text: `${entry.expectedOutAmount} ${entry.outputToken}`,
-								border: true,
-							},
-							{
-								text: `${entry.expectedProfit.toFixed(2)}% ${entry.slippage} BPS`,
-								border: true,
-							},
-							{
-								text: `${
-									entry.error ? chalk.bold.redBright(entry.error) : "-"
-								}`,
-								border: true,
-							}
-						)
+			// Display trade history if enabled
+			if (cache.ui.showTradeHistory && cache?.tradeHistory?.length > 0) {
+				console.log(chalk.yellow("RECENT TRADES:"));
+				console.log(chalk.gray("TIME".padEnd(20) + "SIDE".padEnd(6) + "IN".padEnd(15) + "OUT".padEnd(15) + "PROFIT".padEnd(15) + "ERROR"));
+				
+				const tableData = [...cache.tradeHistory].slice(-5);
+				tableData.forEach((entry) => {
+					console.log(
+						entry.date.padEnd(20) +
+						(entry.buy ? "BUY" : "SELL").padEnd(6) +
+						`${entry.inAmount} ${entry.inputToken}`.padEnd(15) +
+						`${entry.outAmount} ${entry.outputToken}`.padEnd(15) +
+						chalk[entry.profit > 0 ? "green" : entry.profit < 0 ? "red" : "cyan"](`${isNaN(entry.profit) ? "0" : entry.profit.toFixed(2)}%`).padEnd(15) +
+						(entry.error ? chalk.red(entry.error) : "-")
 					);
-				}
+				});
+				console.log();
 			}
-			ui.div("");
-
-			// print UI
-			console.log(ui.toString());
+			
+			// Hotkey help
+			console.log(chalk.gray("HOTKEYS: [H]elp [P]rofit Chart [T]rade History [S]imulation Mode [CTRL+C] Exit"));
 		}
 	} catch (error) {
-		console.log(error);
+		console.error("Error in printToConsole:", error);
 	}
 }
 

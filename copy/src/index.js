@@ -1,52 +1,46 @@
 #!/usr/bin/env node
 "use strict";
-const React = require("react");
-const importJsx = require("import-jsx");
-const { render } = require("ink");
-const meow = require("meow");
+require("dotenv").config();
+const chalk = require("chalk");
+const ora = require("ora-classic");
+const fs = require("fs");
+const {checkForEnvFile,checkWallet,checkArbReady,createTempDir} = require("./utils");
 
-// check for .env file
-const { checkForEnvFile, checkWallet, checkArbReady } = require("./utils");
+// Create temp directory if it doesn't exist
+createTempDir();
+
+// Check for .env file
 checkForEnvFile();
 
-require("dotenv").config();
+// Validate required environment variables
+const requiredEnvVars = [
+    "SOLANA_WALLET_PRIVATE_KEY",
+    "DEFAULT_RPC"
+];
 
+let spinner = ora({
+    text: "Checking environment variables...",
+    discardStdin: false,
+    color: "magenta",
+}).start();
+
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if(missingVars.length > 0) {
+    spinner.fail(`Missing required environment variables: ${missingVars.join(', ')}`);
+    console.log(chalk.red("Please set these variables in your .env file and try again."));
+    process.exit(1);
+}
+
+spinner.succeed("Environment variables verified!");
+
+// Check wallet validity
 checkWallet();
 
-const isArbReady = async () => {
-    try {
-        // Display the message
-        await checkArbReady();
-        return true; // If checkArbReady completes without errors, return true
-    } catch (error) {
-        spinner.text = chalk.black.bgRedBright(
-            `\n${error.message}\n`
-        );
-        logExit(1, error);
-        process.exit(1); // Exit the process if there's an error
-    }
-};
-
-isArbReady().then((arbReady) => {
-	if (!arbReady) {
-        process.exit(1); // Exit the process if ARB is not ready
-    }
-});
-
-const wizard = importJsx("./wizard/index");
-
-const cli = meow(`
-	Usage
-	  $ solana-jupiter-bot
-
-	Options
-		--name  Your name
-
-	Examples
-	  $ solana-jupiter-bot --name=Jane
-	  Hello, Master
-`);
-
+// Start the bot directly
 console.clear();
+console.log(chalk.bold.cyan("\n========== ARBITRAGE BOT ==========\n"));
+console.log(chalk.yellow("Starting in arbitrage mode with environment configuration..."));
 
-render(React.createElement(wizard, cli.flags)).waitUntilExit();
+// Start the bot directly
+require('./bot/index.js');
