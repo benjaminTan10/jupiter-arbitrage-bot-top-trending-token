@@ -197,7 +197,7 @@ class Trader extends EventEmitter {
       if(solToUsdcRoutes.routesInfos && solToUsdcRoutes.routesInfos.length > 0) {
         const bestRoute = solToUsdcRoutes.routesInfos[0];
         const price = parseFloat(bestRoute.outAmount) / 1_000_000; // USDC has 6 decimals
-        this.currentPrices['SOL/USDC'] = price;
+        this.currentPrices['WSOL/USDC'] = price;
       }
 
       // If we have a specific token, check its price in USDC and SOL

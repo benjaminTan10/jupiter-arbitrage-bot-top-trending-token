@@ -72,6 +72,18 @@ class EnvConfig {
     this.enableNotifications = process.env.ENABLE_NOTIFICATIONS === 'true';
     this.notificationEndpoint = process.env.NOTIFICATION_ENDPOINT || '';
     this.notificationApiKey = process.env.NOTIFICATION_API_KEY || '';
+    
+    // Trending Tokens Settings
+    this.fetchTrendingTokens = process.env.FETCH_TRENDING_TOKENS === 'true';
+    this.trendingTokenCount = parseInt(process.env.TRENDING_TOKEN_COUNT || '10', 10);
+    this.birdeyeApiUrl = process.env.BIRDEYE_API_URL || 'https://public-api.birdeye.so/defi/tokens';
+    this.birdeyeApiKey = process.env.BIRDEYE_API_KEY || '';
+    this.raydiumApiUrl = process.env.RAYDIUM_API_URL || 'https://api.raydium.io/v2/main/pairs';
+    this.orcaApiUrl = process.env.ORCA_API_URL || 'https://api.orca.so/v1/pools';
+    this.meteoraApiUrl = process.env.METEORA_API_URL || 'https://api.meteora.ag/pools';
+    this.tradingPairsWithWsol = process.env.TRADING_PAIRS_WITH_WSOL === 'true';
+    this.wsolAddress = process.env.WSOL_ADDRESS || 'So11111111111111111111111111111111111111112';
+    this.trendingUpdateInterval = parseInt(process.env.TRENDING_UPDATE_INTERVAL || '3600', 10) * 1000; // Convert to ms
   }
 
   /**
