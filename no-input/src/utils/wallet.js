@@ -1,3 +1,6 @@
+const { Keypair, Connection, PublicKey } = require('@solana/web3.js');
+const bs58 = require('bs58');
+
 /**
  * Utility functions for wallet operations
  */
@@ -8,45 +11,69 @@
  * @returns {Object} The wallet object
  */
 function initializeWallet(privateKey) {
-  // In a real implementation, you would:
-  // 1. Create a keypair from the private key
-  // 2. Initialize a wallet adapter
-  
-  console.log('Initializing wallet...');
-  
-  // Return a mock wallet for now
-  return {
-    publicKey: 'mock-public-key',
-    privateKey,
-    signTransaction: async (tx) => {
-      console.log('Signing transaction...');
-      return tx;
-    },
-    signAllTransactions: async (txs) => {
-      console.log(`Signing ${txs.length} transactions...`);
-      return txs;
-    }
-  };
+  try {
+    console.log('Initializing wallet...');
+    const wallet = Keypair.fromSecretKey(bs58.decode(privateKey));
+    return wallet;
+  } catch (error) {
+    console.error('Error initializing wallet:', error);
+    throw new Error('Invalid private key format');
+  }
 }
 
 /**
  * Get the balance of a wallet
  * @param {Object} wallet - The wallet object
- * @param {string} connection - The RPC connection
- * @returns {number} The balance in SOL
+ * @param {Connection} connection - The RPC connection
+ * @returns {Promise<number>} The balance in SOL
  */
 async function getWalletBalance(wallet, connection) {
-  // In a real implementation, you would:
-  // 1. Connect to the blockchain
-  // 2. Query the balance of the wallet
-  
-  console.log('Getting wallet balance...');
-  
-  // Return a mock balance for now
-  return Math.random() * 10 + 1; // 1-11 SOL
+  try {
+    const balance = await connection.getBalance(wallet.publicKey);
+    return balance / 1e9; // Convert lamports to SOL
+  } catch (error) {
+    console.error('Error getting wallet balance:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get token balances for a wallet
+ * @param {Object} wallet - The wallet object
+ * @param {Connection} connection - The RPC connection
+ * @param {string} tokenMint - The token mint address (optional)
+ * @returns {Promise<Object>} Object with token balances
+ */
+async function getTokenBalances(wallet, connection, tokenMint = null) {
+  try {
+    const balances = {};
+    
+    // Get all token accounts
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
+      wallet.publicKey,
+      tokenMint ? { mint: new PublicKey(tokenMint) } : {}
+    );
+    
+    // Process each token account
+    for (const { account, pubkey } of tokenAccounts.value) {
+      const parsedInfo = account.data.parsed.info;
+      const mint = parsedInfo.mint;
+      const amount = parsedInfo.tokenAmount.uiAmount;
+      
+      if (amount > 0) {
+        balances[mint] = amount;
+      }
+    }
+    
+    return balances;
+  } catch (error) {
+    console.error('Error getting token balances:', error);
+    throw error;
+  }
 }
 
 module.exports = {
   initializeWallet,
-  getWalletBalance
+  getWalletBalance,
+  getTokenBalances
 }; 
