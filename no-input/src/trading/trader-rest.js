@@ -66,9 +66,20 @@ class Trader extends EventEmitter {
       // If tokens of interest are specified, check their balances
       if (this.config.mintAddress) {
         try {
+          // Validate mint address format first
+          let mintPubkey;
+          try {
+            mintPubkey = new PublicKey(this.config.mintAddress);
+          } catch (err) {
+            console.error(`Invalid mint address format: ${this.config.mintAddress}`);
+            this.balances[this.config.mintAddress] = 0;
+            return this.balances;
+          }
+          
+          // Try to get token accounts for the mint
           const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
             this.wallet.publicKey,
-            { mint: new PublicKey(this.config.mintAddress) }
+            { mint: mintPubkey }
           );
           
           if (tokenAccounts.value.length > 0) {
@@ -78,11 +89,16 @@ class Trader extends EventEmitter {
             this.balances[this.config.mintAddress] = 0;
           }
         } catch (error) {
-          console.error(`Error fetching token balance:`, error);
+          // Suppress the detailed error, just set balance to 0
+          console.error(`Could not find token account for specified mint`);
+          this.balances[this.config.mintAddress] = 0;
         }
       }
+      
+      return this.balances;
     } catch (error) {
       console.error('Error checking balances:', error);
+      return this.balances;
     }
   }
 
