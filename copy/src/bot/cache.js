@@ -81,6 +81,23 @@ const cache = {
 		sell: 0,
 	},
 	isSetupDone: false,
+	config: {
+		// Default configuration that will be replaced during setup
+		rpc: [process.env.DEFAULT_RPC || ""],
+		minInterval: parseInt(process.env.MIN_INTERVAL_MS) || 100,
+		slippage: parseInt(process.env.MAX_SLIPPAGE_PERCENT * 100) || 100,
+		priority: parseInt(process.env.PRIORITY) || 100,
+		minPercProfit: parseFloat(process.env.MIN_PROFIT_THRESHOLD) || 0.5,
+		adaptiveSlippage: process.env.ADAPTIVE_SLIPPAGE === "true" ? 1 : 0,
+		tradeSize: {
+			value: parseFloat(process.env.TRADE_SIZE_SOL) || 1.0,
+			strategy: process.env.TRADE_SIZE_STRATEGY || "fixed",
+		},
+		ui: {
+			defaultColor: process.env.UI_COLOR || "cyan",
+		},
+		storeFailedTxInHistory: true,
+	}
 };
 
 module.exports = cache;

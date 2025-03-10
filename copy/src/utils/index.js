@@ -84,23 +84,12 @@ const verifyConfig = (config) => {
  * @returns The config object
  */
 const loadConfigFile = ({showSpinner = false}) => {
-	let config = {};
-	let spinner;
-	if(showSpinner) {
-		spinner = ora({
-			text: "Loading config...",
-			discardStdin: false,
-		}).start();
-	}
+	// This is now just a compatibility function
+	// All configuration is read directly from environment variables
+	console.warn(chalk.yellow("Warning: loadConfigFile is deprecated. Configuration is now read from environment variables."));
 
-	if(fs.existsSync("./config.json")) {
-		config = JSON.parse(fs.readFileSync("./config.json"));
-		spinner?.succeed("Config loaded!");
-		return config;
-	}
-
-	spinner?.fail(chalk.redBright("Loading config failed!\n"));
-	throw new Error("\nNo config.json file found!\n");
+	// Return the cache configuration which is populated from environment variables
+	return require("../bot/cache").config;
 };
 
 const calculateProfit = ((oldVal,newVal) => ((newVal - oldVal) / oldVal) * 100);
@@ -186,17 +175,17 @@ const checkArbReady = async () => {
 		// For simplicity, we'll just make sure the wallet and RPC can connect
 		const connection = new Connection(process.env.DEFAULT_RPC);
 		wallet = Keypair.fromSecretKey(bs58.decode(process.env.SOLANA_WALLET_PRIVATE_KEY));
-
-		// Get wallet's SOL balance
-		const balance = await connection.getBalance(wallet.publicKey);
-		const solBalance = balance / LAMPORTS_PER_SOL;
+		
+		// // Get wallet's SOL balance
+		// const balance = await connection.getBalance(wallet.publicKey);
+		// const solBalance = balance / LAMPORTS_PER_SOL;
 
 		console.log(chalk.green(`Wallet connected successfully: ${wallet.publicKey.toString()}`));
-		console.log(chalk.green(`SOL balance: ${solBalance.toFixed(4)} SOL`));
+		// console.log(chalk.green(`SOL balance: ${solBalance.toFixed(4)} SOL`));
 
 		return true;
 	} catch(err) {
-		console.error(chalk.red("Failed to connect to wallet or RPC:"),err.message);
+		console.error(chalk.red("Failed to connect to wallet or RPC:"), err.message);
 		process.exit(1);
 	}
 };
