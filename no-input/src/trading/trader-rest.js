@@ -3,7 +3,6 @@ const axios = require('axios');
 const { Connection } = require('../utils/connection');
 const { PublicKey, Keypair, Transaction } = require('../utils/solana-web3');
 const bs58 = require('bs58');
-const bs64 = require('bs64');
 const JSBI = require('jsbi');
 
 /**
