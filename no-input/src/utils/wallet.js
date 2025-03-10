@@ -1,4 +1,4 @@
-const { Keypair, PublicKey } = require('../utils/solana-web3');
+const { Keypair, PublicKey } = require('@solana/web3.js');
 const bs58 = require('bs58');
 
 /**

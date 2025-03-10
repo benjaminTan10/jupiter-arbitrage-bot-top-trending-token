@@ -1,5 +1,5 @@
 require('dotenv').config();
-const {PublicKey} = require('../utils/solana-web3');
+const {PublicKey} = require('@solana/web3.js');
 
 /**
  * Configuration loader that reads from environment variables

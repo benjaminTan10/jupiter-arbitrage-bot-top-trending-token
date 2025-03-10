@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { PublicKey } = require('../utils/solana-web3');
+const { PublicKey } = require('@solana/web3.js');
 const EventEmitter = require('events');
 const config = require('../config/envConfig');
 
