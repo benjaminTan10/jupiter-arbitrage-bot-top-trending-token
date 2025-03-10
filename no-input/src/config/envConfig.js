@@ -40,7 +40,10 @@ class EnvConfig {
     this.minIntervalMs = parseInt(process.env.MIN_INTERVAL_MS || '100', 10);
     this.adaptiveSlippage = process.env.ADAPTIVE_SLIPPAGE === 'true';
     this.priority = parseInt(process.env.PRIORITY || '100', 10);
+    
+    // Update interval - interpret as milliseconds directly
     this.updateInterval = parseInt(process.env.UPDATE_INTERVAL || '300', 10);
+    
     this.positionLimit = parseInt(process.env.POSITION_LIMIT || '10', 10);
     this.autoHedge = process.env.AUTO_HEDGE === 'true';
     

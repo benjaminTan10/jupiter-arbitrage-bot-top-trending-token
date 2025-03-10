@@ -11,6 +11,11 @@ class Trader extends EventEmitter {
     this.lastUpdate = null;
     this.currentPrices = {};
     this.opportunities = [];
+    
+    // Convert update interval to milliseconds if it's in seconds
+    this.updateIntervalMs = this.config.updateInterval <= 1000 
+      ? this.config.updateInterval 
+      : this.config.updateInterval;
   }
 
   /**
@@ -38,7 +43,7 @@ class Trader extends EventEmitter {
       return;
     }
 
-    console.log(`Starting trading with update interval: ${this.config.updateInterval}s`);
+    console.log(`Starting trading with update interval: ${this.updateIntervalMs}ms`);
     this.isRunning = true;
     
     // Start the main trading loop
@@ -46,7 +51,7 @@ class Trader extends EventEmitter {
       this.updateCycle().catch(err => {
         console.error('Error in update cycle:', err);
       });
-    }, this.config.updateInterval * 1000);
+    }, this.updateIntervalMs);
     
     // Run the first cycle immediately
     await this.updateCycle();
@@ -88,7 +93,7 @@ class Trader extends EventEmitter {
       console.error('Error in update cycle:', error);
     }
     
-    console.log(`Update cycle completed. Next update in ${this.config.updateInterval}s`);
+    console.log(`Update cycle completed. Next update in ${this.updateIntervalMs}ms`);
   }
 
   /**
@@ -183,7 +188,7 @@ class Trader extends EventEmitter {
         }
         
         // Add a small delay between trades
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 100)); // Reduced from 1000ms to 100ms
       } catch (error) {
         console.error(`Error executing trade:`, error);
         this.emit('tradingError', error);
