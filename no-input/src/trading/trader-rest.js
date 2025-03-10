@@ -74,6 +74,8 @@ class Trader extends EventEmitter {
             return this.balances;
           }
           
+          console.log(`CHECK TOKEN | ${this.config.mintAddress} | ${mintPubkey}`);
+          console.log(`wallet address | ${this.wallet.publicKey}`);
           // Try to get token accounts for the mint
           const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
             this.wallet.publicKey,
