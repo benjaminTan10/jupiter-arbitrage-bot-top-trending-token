@@ -5,6 +5,12 @@ const path = require('path');
 const packagePath = path.resolve('./node_modules/rpc-websockets/package.json');
 
 try {
+  // Check if the file exists first
+  if (!fs.existsSync(packagePath)) {
+    console.log('rpc-websockets package.json not found. The package may not be installed.');
+    process.exit(0);
+  }
+
   // Read the current package.json
   const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
   
@@ -24,5 +30,6 @@ try {
     console.log('rpc-websockets package.json already has exports field');
   }
 } catch (error) {
-  console.error('Error fixing rpc-websockets:', error);
+  console.error('Warning: Could not fix rpc-websockets:', error.message);
+  // Don't exit with error to allow installation to continue
 } 
