@@ -1,16 +1,17 @@
 const bs58 = require('bs58');
+const nacl = require('tweetnacl');
 
 class PublicKey {
   constructor(value) {
-    if (typeof value === 'string') {
+    if(typeof value === 'string') {
       // Validate base58 string format
-      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
+      if(!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
         throw new Error('Invalid public key format');
       }
       this._bn = value;
-    } else if (value instanceof Uint8Array) {
+    } else if(value instanceof Uint8Array) {
       this._bn = bs58.encode(value);
-    } else if (value instanceof PublicKey) {
+    } else if(value instanceof PublicKey) {
       this._bn = value.toString();
     } else {
       throw new Error('Invalid public key input');
@@ -36,18 +37,17 @@ class PublicKey {
 
 class Keypair {
   constructor(keypair) {
-    this._keypair = keypair || { publicKey: null, secretKey: null };
+    this._keypair = keypair || {publicKey: null,secretKey: null};
   }
 
   static fromSecretKey(secretKey) {
-    if (!(secretKey instanceof Uint8Array)) {
+    if(!(secretKey instanceof Uint8Array)) {
       throw new Error('Secret key must be an Uint8Array');
     }
 
-    // In a real implementation, we'd derive the public key from the secret key
-    // For simplicity, we'll just take the first 32 bytes as the "public key"
-    const publicKeyBytes = secretKey.slice(0, 32);
-    const publicKey = new PublicKey(publicKeyBytes);
+    // Properly derive the public key using Ed25519
+    const keyPair = nacl.sign.keyPair.fromSecretKey(secretKey);
+    const publicKey = new PublicKey(keyPair.publicKey);
 
     return new Keypair({
       publicKey,
