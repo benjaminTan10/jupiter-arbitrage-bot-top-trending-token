@@ -39,12 +39,10 @@ const balanceCheck = async (checkToken) => {
 		// Normal token so look up the ATA balance(s)
 		try {
 			let totalTokenBalance = BigInt(0);
-			console.log(`CHECK TOKEN | ${checkToken.address}`);
 			const tokenAccounts = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, {
 				mint: new PublicKey(checkToken.address)
 			});
-			console.log(`TOKEN ACCOUNTS | ${checkToken.address} | ${tokenAccounts.value.length}`);
-			
+		
 			tokenAccounts.value.forEach((accountInfo) => {
 				const parsedInfo = accountInfo.account.data.parsed.info;
 				totalTokenBalance += BigInt(parsedInfo.tokenAmount.amount);

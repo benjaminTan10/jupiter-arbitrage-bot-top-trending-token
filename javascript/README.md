@@ -13,41 +13,6 @@
 
 This bot is an open-source CLI tool that allows you to automate your crypto trading strategies on the Solana blockchain. The bot is currently written in JS and uses the Jupiter V4 SDK to find routes and execute trades.
 
-## Project Analysis
-
-### Architecture Overview
-- Built with Node.js using React Ink for CLI interface
-- Uses Jupiter V4 SDK for DEX aggregation and trade execution
-- Implements a modular design with separate components for:
-  - Trading strategies (Arbitrage and PingPong)
-  - UI rendering and state management
-  - Transaction handling and balance checking
-  - Configuration management
-
-### Key Components
-- **Trading Strategies**
-  - Arbitrage: Finds and executes profitable trades between same token pairs
-  - PingPong: Alternates between buying and selling tokens to profit from price movements
-- **Balance Management**: Real-time balance tracking and validation
-- **Slippage Protection**: Adaptive slippage based on profit margins
-- **Error Handling**: Comprehensive error tracking and fail-safes
-- **Performance Monitoring**: Real-time charts for latency and profit tracking
-
-### Technical Features
-- Real-time price monitoring and trade execution
-- Configurable trading parameters through CLI wizard
-- Support for custom RPC endpoints
-- Advanced transaction retry logic
-- Comprehensive logging and trade history
-
-## Contact Information
-
-For support or custom development:
-
-**Benjamin Tan**
-- Telegram: [@blockchainDeveloper_Ben](https://t.me/blockchainDeveloper_Ben)
-- Email: benjamintan1013@gmail.com
-
 ## nav
 
 ### [features](#features) · [CLI UI](#cli-ui) · ⚡️[install](#install) · [quickstart](#quickstart) · [hotkeys](#hotkeys) · [contributing](#contributing) · [license](#license) · [risk](#risk-disclaimer)
