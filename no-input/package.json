@@ -12,7 +12,7 @@
   "license": "MIT",
   "dependencies": {
     "chalk": "^4.1.2",
-    "dotenv": "^16.0.3"
+    "dotenv": "^16.4.7"
   },
   "devDependencies": {
     "eslint": "^8.36.0",
@@ -22,4 +22,4 @@
     "nodemon": "^2.0.21",
     "prettier": "^2.8.4"
   }
-} 
+}
