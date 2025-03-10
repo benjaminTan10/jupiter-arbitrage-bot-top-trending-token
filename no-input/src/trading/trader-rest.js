@@ -70,7 +70,7 @@ class Trader extends EventEmitter {
             this.wallet.publicKey,
             { mint: new PublicKey(this.config.mintAddress) }
           );
-
+          
           if (tokenAccounts.value.length > 0) {
             const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
             this.balances[this.config.mintAddress] = balance;
@@ -81,78 +81,117 @@ class Trader extends EventEmitter {
           console.error(`Error fetching token balance:`, error);
         }
       }
-
-      return this.balances;
     } catch (error) {
       console.error('Error checking balances:', error);
-      throw error;
     }
   }
 
   /**
-   * Start the trading loop
+   * Start trading cycle
    */
   async startTrading() {
     if (this.isRunning) {
       return;
     }
-
+    
     this.isRunning = true;
-
-    // Start the main trading loop
-    this.tradingInterval = setInterval(() => {
-      this.updateCycle().catch(err => {
-        console.error('Error in update cycle:', err);
-      });
-    }, this.updateIntervalMs);
-
-    // Run the first cycle immediately
+    
+    // Run immediately on start
     await this.updateCycle();
+    
+    // Set up interval for ongoing updates
+    this.updateInterval = setInterval(async () => {
+      await this.updateCycle();
+    }, this.updateIntervalMs);
   }
-
+  
   /**
-   * Stop the trading loop
+   * Stop trading
    */
   stopTrading() {
     if (!this.isRunning) {
       return;
     }
-
-    clearInterval(this.tradingInterval);
+    
+    clearInterval(this.updateInterval);
     this.isRunning = false;
   }
-
+  
   /**
-   * Main update cycle that runs on each interval
+   * Main update cycle - fetch prices, find opportunities, execute trades
    */
   async updateCycle() {
-    this.lastUpdate = new Date();
-
+    if (!this.isRunning) {
+      return;
+    }
+    
     try {
+      this.lastUpdate = new Date();
+      
       // 1. Fetch current prices
       await this.fetchPrices();
-
-      // 2. Check trending tokens if enabled
-      if (this.config.fetchTrendingTokens && this.config.tradeTrendingTokens && this.trendingTokensTracker) {
-        await this.checkTrendingTokenOpportunities();
-      }
-
-      // 3. Find trading opportunities
+      
+      // 2. Identify trading opportunities
       await this.findOpportunities();
-
-      // 4. Execute trades if enabled
-      if (this.config.tradingEnabled && this.opportunities.length > 0) {
-        await this.executeTrades();
-      }
+      
+      // 3. Execute trades if enabled
+      await this.executeTrades();
+      
     } catch (error) {
-      console.error('Error in update cycle:', error);
+      console.error('Update cycle error:', error);
     }
   }
 
   /**
-   * Get price quote from Jupiter API
+   * Fetch current token prices
    */
-  async getJupiterQuote(inputMint, outputMint, amount, slippageBps = 50) {
+  async fetchPrices() {
+    try {
+      // Get SOL/USDC price for reference
+      try {
+        const solToUsdcQuote = await this.getJupiterQuote(
+          'So11111111111111111111111111111111111111112', // SOL mint
+          'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC mint
+          1_000_000_000 // 1 SOL in lamports
+        );
+        
+        if (solToUsdcQuote && solToUsdcQuote.outAmount) {
+          const price = parseFloat(solToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
+          this.currentPrices['SOL/USDC'] = price;
+          this.currentPrices['WSOL/USDC'] = price;
+          console.log(`PRICE | SOL/USDC | $${price.toFixed(2)} | Jupiter`);
+        }
+      } catch (error) {
+        // Handle errors quietly
+      }
+      
+      // Get token/USDC price if we have a specific token
+      if (this.config.mintAddress) {
+        try {
+          const tokenToUsdcQuote = await this.getJupiterQuote(
+            this.config.mintAddress,
+            'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC mint
+            Math.pow(10, this.config.tokenDecimals || 6) // 1 token in its smallest units
+          );
+          
+          if (tokenToUsdcQuote && tokenToUsdcQuote.outAmount) {
+            const price = parseFloat(tokenToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
+            this.currentPrices[`${this.config.mintAddress}/USDC`] = price;
+            console.log(`PRICE | ${this.config.tokenSymbol || this.config.mintAddress}/USDC | $${price.toFixed(6)} | Jupiter`);
+          }
+        } catch (error) {
+          // Handle errors quietly
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching prices:', error);
+    }
+  }
+
+  /**
+   * Get a quote from Jupiter API
+   */
+  async getJupiterQuote(inputMint, outputMint, amount, slippageBps = 10) {
     try {
       const response = await axios.get(`${this.jupiterBaseUrl}/quote`, {
         params: {
@@ -162,153 +201,66 @@ class Trader extends EventEmitter {
           slippageBps
         }
       });
+      
       return response.data;
     } catch (error) {
-      console.error('Error getting Jupiter quote:', error);
-      throw error;
+      // Handle errors quietly
+      return null;
     }
   }
 
   /**
-   * Get swap instructions from Jupiter API
-   */
-  async getJupiterSwap(route, userPublicKey) {
-    try {
-      const response = await axios.post(`${this.jupiterBaseUrl}/swap`, {
-        route,
-        userPublicKey: userPublicKey.toString()
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error getting swap instructions:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Fetch current token prices
-   */
-  async fetchPrices() {
-    try {
-      // Define base tokens for price checking
-      const baseTokens = ['So11111111111111111111111111111111111111112', 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'];
-      // USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-      // SOL (wrapped): So11111111111111111111111111111111111111112
-
-      this.currentPrices = {};
-
-      // If we have a specific token of interest, add it to our price checks
-      if (this.config.mintAddress && !baseTokens.includes(this.config.mintAddress)) {
-        baseTokens.push(this.config.mintAddress);
-      }
-
-      // Check price of SOL in USDC
-      const amountInLamports = '1000000000'; // 1 SOL in lamports
-      const solToUsdcQuote = await this.getJupiterQuote(
-        'So11111111111111111111111111111111111111112',
-        'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-        amountInLamports,
-        10
-      );
-
-      if (solToUsdcQuote && solToUsdcQuote.outAmount) {
-        const price = parseFloat(solToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
-        this.currentPrices['SOL/USDC'] = price;
-        this.currentPrices['WSOL/USDC'] = price;
-        console.log(`PRICE | SOL/USDC | $${price.toFixed(2)} | Jupiter`);
-      }
-
-      // If we have a specific token, check its price in USDC
-      if (this.config.mintAddress && this.config.mintAddress !== 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v') {
-        try {
-          // Get token info to determine decimals
-          const tokenInfo = await this.connection.getParsedAccountInfo(new PublicKey(this.config.mintAddress));
-          const tokenDecimals = tokenInfo.value?.data.parsed.info.decimals || 9;
-          const tokenAmountInSmallestUnit = Math.pow(10, tokenDecimals).toString();
-
-          // Token to USDC price
-          const tokenToUsdcQuote = await this.getJupiterQuote(
-            this.config.mintAddress,
-            'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-            tokenAmountInSmallestUnit,
-            10
-          );
-
-          if (tokenToUsdcQuote && tokenToUsdcQuote.outAmount) {
-            const price = parseFloat(tokenToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
-            this.currentPrices[`${this.config.mintAddress}/USDC`] = price;
-            console.log(`PRICE | ${this.config.mintAddress}/USDC | $${price.toFixed(6)} | Jupiter`);
-          }
-        } catch (error) {
-          console.error(`Error fetching price for ${this.config.mintAddress}:`, error);
-        }
-      }
-
-      return this.currentPrices;
-    } catch (error) {
-      console.error('Error fetching prices:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Find trading opportunities based on current prices
+   * Find arbitrage opportunities
    */
   async findOpportunities() {
-    // Clear previous opportunities
+    // Reset opportunities
     this.opportunities = [];
 
-    try {
-      // Define parameters for opportunity calculation
-      const tokenA = this.config.mintAddress || 'So11111111111111111111111111111111111111112'; // Default to SOL if not specified
-      const tokenB = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'; // USDC
+    if (!this.trendingTokensTracker || !this.config.tradingEnabled) {
+      return;
+    }
 
-      // Get token info to determine decimals
-      const tokenAInfo = await this.connection.getParsedAccountInfo(new PublicKey(tokenA));
-      const tokenADecimals = tokenA === 'So11111111111111111111111111111111111111112' ? 9 : tokenAInfo.value?.data.parsed.info.decimals || 9;
-
-      // Amount to trade (in smallest units)
-      const amountToTrade = (this.config.tradeSizeSol * Math.pow(10, tokenADecimals)).toString();
-
-      // Get quote for a potential trade
-      const quote = await this.getJupiterQuote(
-        tokenA,
-        tokenB,
-        amountToTrade,
-        parseInt(this.config.slippage, 10) || 50
-      );
-
-      if (quote && quote.outAmount) {
-        // Calculate expected output amount in human-readable format
-        const expectedOutputAmount = parseFloat(quote.outAmount) / Math.pow(10, 6); // USDC has 6 decimals
-
-        // Calculate the input amount in USD for comparison
-        const inputAmountUSD = this.config.tradeSizeSol * (this.currentPrices['SOL/USDC'] || 0);
-
-        // Calculate potential profit percentage
-        const potentialProfit = ((expectedOutputAmount - inputAmountUSD) / inputAmountUSD) * 100;
-
-        if (potentialProfit > this.config.minProfitThreshold) {
-          const opportunity = {
-            type: 'standard',
-            fromToken: tokenA === 'So11111111111111111111111111111111111111112' ? 'SOL' : tokenA,
-            toToken: 'USDC',
-            quote: quote,
-            inputAmount: this.config.tradeSizeSol,
-            expectedOutputAmount,
-            potentialProfit,
-            estimatedValue: expectedOutputAmount - inputAmountUSD,
-          };
-
-          this.opportunities.push(opportunity);
-          console.log(`OPPORTUNITY | ${opportunity.fromToken}/USDC | ${potentialProfit.toFixed(2)}% | $${opportunity.estimatedValue.toFixed(2)}`);
+    const trendingTokens = this.trendingTokensTracker.trendingTokens;
+    
+    for (const token of trendingTokens) {
+      try {
+        // Check if there's a price imbalance
+        if (this.config.strategyType === 'arbitrage') {
+          const opportunity = await this.checkArbitrageOpportunity(token);
+          if (opportunity) {
+            console.log(`OPPORTUNITY | ${opportunity.fromToken}→${opportunity.toToken} | Est. Profit: $${opportunity.estimatedValue.toFixed(2)}`);
+            this.opportunities.push(opportunity);
+          }
         }
+      } catch (error) {
+        // Handle errors quietly
       }
+    }
+    
+    // Sort opportunities by estimated value (highest first)
+    this.opportunities.sort((a, b) => b.estimatedValue - a.estimatedValue);
+    
+    // Limit to max opportunities
+    if (this.opportunities.length > this.config.maxOpportunities) {
+      this.opportunities = this.opportunities.slice(0, this.config.maxOpportunities);
+    }
+  }
 
-      return this.opportunities;
+  /**
+   * Get swap transaction data from Jupiter API
+   */
+  async getJupiterSwap(quoteResponse, userPublicKey) {
+    try {
+      const response = await axios.post(`${this.jupiterBaseUrl}/swap`, {
+        quoteResponse,
+        userPublicKey: userPublicKey.toString(),
+        wrapUnwrapSOL: true
+      });
+      
+      return response.data;
     } catch (error) {
-      console.error('Error finding opportunities:', error);
-      throw error;
+      console.error('Error getting swap transaction:', error);
+      return null;
     }
   }
 
@@ -335,7 +287,6 @@ class Trader extends EventEmitter {
         );
 
         if (!swapData || !swapData.swapTransaction) {
-          console.error('Failed to get swap transaction');
           continue;
         }
 
@@ -352,7 +303,7 @@ class Trader extends EventEmitter {
           { skipPreflight: false, preflightCommitment: 'confirmed' }
         );
 
-        console.log(`TX | ${txid} | Expected output: ${opportunity.expectedOutputAmount} USDC | Profit: $${opportunity.estimatedValue.toFixed(2)}`);
+        console.log(`TX | ${txid} | Expected output: ${opportunity.expectedOutputAmount} ${opportunity.toToken} | Profit: $${opportunity.estimatedValue.toFixed(2)}`);
 
         // Emit success event
         this.emit('tradingSuccess', {
@@ -364,8 +315,10 @@ class Trader extends EventEmitter {
         await this.checkBalances();
 
       } catch (error) {
-        console.error(`Error executing trade:`, error);
-        this.emit('tradingError', error);
+        // Only log serious errors
+        if (error.message && error.message.includes('blockhash')) {
+          console.error(`Blockchain error: ${error.message}`);
+        }
       }
 
       // Add a small delay between trades to avoid rate limiting

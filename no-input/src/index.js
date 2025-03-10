@@ -38,7 +38,10 @@ async function main() {
     });
 
     trader.on('tradingError',(error) => {
-      console.error('Trading error:',error.message);
+      // Only log critical errors
+      if(error.code && ['ECONNREFUSED','ETIMEDOUT','ENOTFOUND'].includes(error.code)) {
+        console.error('Network error:',error.code);
+      }
     });
 
     // Initialize and start trading

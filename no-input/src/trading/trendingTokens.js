@@ -15,12 +15,13 @@ class TrendingTokensTracker extends EventEmitter {
     this.lastUpdate = null;
     this.updateIntervalMs = this.config.trendingTokenUpdateInterval * 1000;
 
-    // Constants for APIs
+    // API endpoints for trending tokens
     this.API_ENDPOINTS = {
       raydium: 'https://api.raydium.io/v2/main/trending-tokens',
       orca: 'https://api.orca.so/trending-tokens',
       meteora: 'https://api.meteora.ag/trending',
-      birdeye: 'https://public-api.birdeye.so/public/tokenlist?sort_by=volume&sort_type=desc&offset=0&limit=50'
+      birdeye: 'https://public-api.birdeye.so/public/tokenlist?sort_by=volume&sort_type=desc&offset=0&limit=50',
+      jupiter: 'https://tokens.jup.ag/tokens?tags=birdeye-trending'
     };
 
     // Fallback to BirdEye API if others fail
@@ -65,43 +66,29 @@ class TrendingTokensTracker extends EventEmitter {
     this.lastUpdate = new Date();
     
     try {
-      const fetchPromises = [];
-      const sources = this.config.trendingTokenSources;
+      // Configure which sources to use based on config
+      const sources = this.config.trendingTokenSources.split(',');
       
-      // Create fetch promises for each enabled source
-      for (const source of sources) {
-        if (this.API_ENDPOINTS[source]) {
-          fetchPromises.push(this._fetchFromSource(source));
-        }
-      }
-      
-      // Fetch from all sources in parallel
-      const results = await Promise.allSettled(fetchPromises);
-      
-      // Combine and process results
       let allTokens = [];
       let successfulSources = 0;
       
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value?.length > 0) {
+      // Fetch from all configured sources in parallel
+      await Promise.all(sources.map(async (source, index) => {
+        const result = await this.fetchTokensFromSource(source.trim());
+        if (result && result.value && result.value.length > 0) {
           allTokens = [...allTokens, ...result.value];
           successfulSources++;
         }
-      });
+      }));
       
-      // If all sources failed, try BirdEye as fallback
+      // Fall back to BirdEye API if no other sources worked
       if (successfulSources === 0 && this.enableBirdeyeFallback) {
-        try {
-          const birdeyeTokens = await this._fetchFromSource('birdeye');
-          if (birdeyeTokens?.length > 0) {
-            allTokens = birdeyeTokens;
-          }
-        } catch (error) {
-          console.error('BirdEye fallback failed');
+        const result = await this.fetchTokensFromSource('birdeye');
+        if (result && result.value && result.value.length > 0) {
+          allTokens = [...allTokens, ...result.value];
         }
       }
       
-      // Process and filter tokens
       if (allTokens.length > 0) {
         // Remove duplicates by address
         const uniqueTokens = [...new Map(allTokens.map(token => [token.address, token])).values()];
@@ -127,9 +114,7 @@ class TrendingTokensTracker extends EventEmitter {
       
       return this.trendingTokens;
     } catch (error) {
-      console.error('Error fetching trending tokens:', error);
-      this.emit('error', error);
-      throw error;
+      return [];
     }
   }
 
@@ -138,7 +123,7 @@ class TrendingTokensTracker extends EventEmitter {
    * @param {string} source - The source name (raydium, orca, meteora, birdeye)
    * @returns {Promise<Array>} - Array of token objects
    */
-  async _fetchFromSource(source) {
+  async fetchTokensFromSource(source) {
     try {
       const endpoint = this.API_ENDPOINTS[source];
       const response = await axios.get(endpoint, {
@@ -167,10 +152,10 @@ class TrendingTokensTracker extends EventEmitter {
           break;
       }
       
-      return tokens;
+      return { status: 'fulfilled', value: tokens };
     } catch (error) {
       console.error(`Error fetching from ${source}:`, error.message);
-      return [];
+      return { status: 'rejected', reason: error };
     }
   }
 
