@@ -86,8 +86,6 @@ class TrendingTokensTracker extends EventEmitter {
         if (result.status === 'fulfilled' && result.value?.length > 0) {
           allTokens = [...allTokens, ...result.value];
           successfulSources++;
-        } else {
-          console.error(`Failed to fetch trending tokens from ${sources[index]}`);
         }
       });
       
@@ -119,7 +117,11 @@ class TrendingTokensTracker extends EventEmitter {
         // Limit number of tokens
         this.trendingTokens = sortedTokens.slice(0, this.config.trendingTokenLimit);
         
-        console.log(`Found ${this.trendingTokens.length} trending tokens`);
+        // Log trending token prices
+        for (const token of this.trendingTokens.slice(0, 5)) { // Show top 5
+          console.log(`TRENDING | ${token.symbol} | Vol: $${token.daily_volume.toLocaleString()} | Source: ${token.source}`);
+        }
+        
         this.emit('tokensUpdated', this.trendingTokens);
       }
       

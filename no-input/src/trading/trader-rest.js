@@ -44,7 +44,6 @@ class Trader extends EventEmitter {
       }
 
       this.wallet = Keypair.fromSecretKey(bs58.decode(this.config.privateKey));
-      console.log(`Wallet initialized: ${this.wallet.publicKey.toString()}`);
 
       // Check wallet balances
       await this.checkBalances();
@@ -64,8 +63,6 @@ class Trader extends EventEmitter {
       const solBalance = await this.connection.getBalance(this.wallet.publicKey);
       this.balances.SOL = solBalance / 1e9; // Convert lamports to SOL
 
-      console.log(`SOL Balance: ${this.balances.SOL}`);
-
       // If tokens of interest are specified, check their balances
       if (this.config.mintAddress) {
         try {
@@ -77,7 +74,6 @@ class Trader extends EventEmitter {
           if (tokenAccounts.value.length > 0) {
             const balance = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.uiAmount;
             this.balances[this.config.mintAddress] = balance;
-            console.log(`Token Balance (${this.config.mintAddress}): ${balance}`);
           } else {
             this.balances[this.config.mintAddress] = 0;
           }
@@ -101,7 +97,6 @@ class Trader extends EventEmitter {
       return;
     }
 
-    console.log(`Starting trading`);
     this.isRunning = true;
 
     // Start the main trading loop
@@ -191,7 +186,7 @@ class Trader extends EventEmitter {
   }
 
   /**
-   * Fetch current prices from Jupiter API
+   * Fetch current token prices
    */
   async fetchPrices() {
     try {
@@ -220,6 +215,7 @@ class Trader extends EventEmitter {
         const price = parseFloat(solToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
         this.currentPrices['SOL/USDC'] = price;
         this.currentPrices['WSOL/USDC'] = price;
+        console.log(`PRICE | SOL/USDC | $${price.toFixed(2)} | Jupiter`);
       }
 
       // If we have a specific token, check its price in USDC
@@ -241,6 +237,7 @@ class Trader extends EventEmitter {
           if (tokenToUsdcQuote && tokenToUsdcQuote.outAmount) {
             const price = parseFloat(tokenToUsdcQuote.outAmount) / 1_000_000; // USDC has 6 decimals
             this.currentPrices[`${this.config.mintAddress}/USDC`] = price;
+            console.log(`PRICE | ${this.config.mintAddress}/USDC | $${price.toFixed(6)} | Jupiter`);
           }
         } catch (error) {
           console.error(`Error fetching price for ${this.config.mintAddress}:`, error);
@@ -304,7 +301,7 @@ class Trader extends EventEmitter {
           };
 
           this.opportunities.push(opportunity);
-          console.log(`Found opportunity: ${potentialProfit.toFixed(2)}% profit`);
+          console.log(`OPPORTUNITY | ${opportunity.fromToken}/USDC | ${potentialProfit.toFixed(2)}% | $${opportunity.estimatedValue.toFixed(2)}`);
         }
       }
 
@@ -327,11 +324,9 @@ class Trader extends EventEmitter {
       return;
     }
 
-    console.log(`Executing ${this.opportunities.length} trades`);
-
     for (const opportunity of this.opportunities) {
       try {
-        console.log(`Trade: ${opportunity.fromToken} -> ${opportunity.toToken}`);
+        console.log(`SWAP | ${opportunity.fromToken}→${opportunity.toToken} | ${opportunity.inputAmount} ${opportunity.fromToken}`);
 
         // Get swap instructions
         const swapData = await this.getJupiterSwap(
@@ -357,8 +352,7 @@ class Trader extends EventEmitter {
           { skipPreflight: false, preflightCommitment: 'confirmed' }
         );
 
-        console.log(`Transaction: ${txid}`);
-        console.log(`Profit: $${opportunity.estimatedValue.toFixed(2)}`);
+        console.log(`TX | ${txid} | Expected output: ${opportunity.expectedOutputAmount} USDC | Profit: $${opportunity.estimatedValue.toFixed(2)}`);
 
         // Emit success event
         this.emit('tradingSuccess', {

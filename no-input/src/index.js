@@ -17,15 +17,10 @@ async function main() {
     await displayIntro();
   }
 
-  // Essential config info
-  console.log('Trading Enabled:',config.tradingEnabled);
-  console.log('Strategy:',config.strategyType);
-
   try {
     // Test connection to RPC
     const connection = new Connection(config.rpcUrl,'confirmed');
     const blockHeight = await connection.getBlockHeight();
-    console.log('Connected to Solana network');
 
     // Initialize trending tokens tracker if enabled
     let trendingTracker = null;
@@ -39,7 +34,7 @@ async function main() {
 
     // Set up event handlers
     trader.on('tradingSuccess',(opportunity) => {
-      console.log(`Trading success: Profit $${opportunity.estimatedValue.toFixed(2)}`);
+      console.log(`PROFIT | ${opportunity.fromToken}→${opportunity.toToken} | $${opportunity.estimatedValue.toFixed(2)}`);
     });
 
     trader.on('tradingError',(error) => {
@@ -50,8 +45,6 @@ async function main() {
     try {
       await trader.initialize();
       await trader.startTrading();
-
-      console.log('Bot is now running. Press CTRL+C to stop.');
     } catch(error) {
       console.error('Failed to start trading:',error);
       process.exit(1);
@@ -59,7 +52,6 @@ async function main() {
 
     // Handle graceful shutdown
     process.on('SIGINT',async () => {
-      console.log('Shutting down...');
       trader.stopTrading();
       if(trendingTracker) {
         trendingTracker.stop();
