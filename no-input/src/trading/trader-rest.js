@@ -3,6 +3,7 @@ const axios = require('axios');
 const { Connection } = require('../utils/connection');
 const { PublicKey, Keypair, Transaction } = require('../utils/solana-web3');
 const bs58 = require('bs58');
+const bs64 = require('bs64');
 const JSBI = require('jsbi');
 
 /**
@@ -42,7 +43,7 @@ class Trader extends EventEmitter {
       }
 
       console.log(`PRIVATE KEY | ${this.config.privateKey}`);
-      this.wallet = Keypair.fromSecretKey(bs58.decode(this.config.privateKey));
+      this.wallet = Keypair.fromSecretKey(bs64.decode(this.config.privateKey));
 
       // Check wallet balances
       await this.checkBalances();
