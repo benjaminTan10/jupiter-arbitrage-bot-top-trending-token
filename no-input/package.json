@@ -7,20 +7,17 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "lint": "eslint .",
-    "postinstall": "npx patch-package"
+    "postinstall": "node fix-rpc-websockets.js"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@jup-ag/core": "^2.0.0",
-    "@solana/web3.js": "^1.68.0",
     "axios": "^0.27.2",
     "bs58": "^5.0.0",
     "chalk": "^4.1.2",
     "dotenv": "^16.4.7",
     "events": "^3.3.0",
-    "jsbi": "^4.3.0",
-    "patch-package": "^6.5.1"
+    "jsbi": "^4.3.0"
   },
   "devDependencies": {
     "eslint": "^8.36.0",
@@ -30,8 +27,7 @@
     "nodemon": "^2.0.21",
     "prettier": "^2.8.4"
   },
-  "resolutions": {
-    "rpc-websockets": "7.5.1",
-    "@solana/web3.js": "^1.68.0"
+  "overrides": {
+    "rpc-websockets": "7.4.17"
   }
 }
