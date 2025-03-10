@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "postinstall": "npm install rpc-websockets@7.10.0 --save-exact && node fix-rpc-websockets.js"
   },
   "author": "",
   "license": "MIT",
@@ -19,7 +20,7 @@
     "dotenv": "^16.4.7",
     "events": "^3.3.0",
     "jsbi": "^4.3.0",
-    "rpc-websockets": "7.4.17"
+    "rpc-websockets": "7.10.0"
   },
   "devDependencies": {
     "eslint": "^8.36.0",
