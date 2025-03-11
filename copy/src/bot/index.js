@@ -61,6 +61,10 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 	const i = cache.iteration;
 	cache.queue[i] = -1;
 
+	console.log(chalk.cyan('═════════════════════════════════════════════'));
+	console.log(chalk.yellow('👮‍♂️ arbitrageStrategy ... 👮‍♂️'));
+	console.log(chalk.cyan('═════════════════════════════════════════════'));
+
 	swapactionrun: try {
 		// calculate & update iterations per minute
 		updateIterationsPerMin(cache);
@@ -74,7 +78,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 
 		//BNI AMT to TRADE
 		const amountInJSBI = JSBI.BigInt(amountToTrade);
-		console.log(chalk.gray('Checking routes for amount:') + toDecimal(amountToTrade,tokenA.decimals) + ' ' + tokenA.symbol);
+		console.log(chalk.gray('Checking routes for amount:') + toDecimal(amountToTrade, tokenA.decimals) + ' ' + tokenA.symbol);
 
 		// default slippage
 		const slippage = typeof cache.config.slippage === "number" ? cache.config.slippage : 1; // 100 is 0.1%
@@ -86,7 +90,10 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		// check current routes
 		const performanceOfRouteCompStart = performance.now();
 		console.log(chalk.gray('Computing routes...'));
-
+		console.log(chalk.gray('Input token: ') + inputToken.symbol);
+		console.log(chalk.gray('Output token: ') + outputToken.symbol);
+		console.log(chalk.gray('Amount to trade: ') + toDecimal(amountToTrade,inputToken.decimals));
+		console.log(chalk.gray('Slippage: ') + slippage);
 		// First route to find best DEX A
 		const routes = await jupiter.computeRoutes({
 			inputMint: new PublicKey(inputToken.address),
