@@ -81,6 +81,12 @@ const cache = {
 		sell: 0,
 	},
 	isSetupDone: false,
+	
+	// Token rotation state
+	tokenRotationList: [],
+	currentRotationToken: null,
+	currentRotationIndex: 0,
+	
 	config: {
 		// Default configuration that will be replaced during setup
 		rpc: [process.env.DEFAULT_RPC || ""],
@@ -89,6 +95,7 @@ const cache = {
 		priority: parseInt(process.env.PRIORITY) || 100,
 		minPercProfit: parseFloat(process.env.MIN_PROFIT_THRESHOLD) || 0.5,
 		adaptiveSlippage: process.env.ADAPTIVE_SLIPPAGE === "true" ? 1 : 0,
+		tradingStrategy: "arbitrage",
 		tradeSize: {
 			value: parseFloat(process.env.TRADE_SIZE_SOL) || 1.0,
 			strategy: process.env.TRADE_SIZE_STRATEGY || "fixed",

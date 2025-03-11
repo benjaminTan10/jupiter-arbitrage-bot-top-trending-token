@@ -15,7 +15,7 @@ const {
 } = require("../utils");
 const {handleExit,logExit} = require("./exit");
 const cache = require("./cache");
-const {setup,getInitialotherAmountThreshold,checkTokenABalance} = require("./setup");
+const {setup,getInitialotherAmountThreshold,checkTokenABalance,rotateToNextToken} = require("./setup");
 const {printToConsole} = require("./ui/");
 const {swap,failedSwapHandler,successSwapHandler} = require("./swap");
 const chalk = require('chalk');
@@ -37,16 +37,55 @@ function getRandomAmt(runtime) {
 	return ((Math.floor(Math.random() * (max - min + 1)) + min) / 10000);
 }
 
+// Add this function near the top of the file, after the imports
+const safeToNumber = (value) => {
+	try {
+		// If it's already a number, return it
+		if(typeof value === 'number') return value;
+
+		// If it's a BN instance, use its toNumber method
+		if(value && typeof value.toNumber === 'function') {
+			return value.toNumber();
+		}
+
+		// If it's a string or other type, convert to BN first
+		return new BN(value).toNumber();
+	} catch(error) {
+		console.error('Error converting value to number:',error);
+		// Return 0 or some default value as fallback
+		return 0;
+	}
+};
+
 // Function to watch for arbitrage opportunities
 const watcher = async (jupiter,tokenA,tokenB) => {
 	console.log(chalk.cyan('═════════════════════════════════════════════'));
-	console.log(chalk.yellow('🔍 CHECKING MARKET...'));
+	console.log(chalk.yellow(`🔍 CHECKING MARKET: ${tokenA.symbol} ↔ ${tokenB.symbol}`));
 	console.log(chalk.cyan('═════════════════════════════════════════════'));
 
 	try {
+		// Check for manual rotation request
+		if(cache.manualRotation) {
+			console.log(chalk.magentaBright("Manual token rotation requested..."));
+			cache.manualRotation = false;
+
+			// Get the next token
+			const newTokenB = rotateToNextToken();
+
+			if(newTokenB) {
+				tokenB = newTokenB;
+				console.log(chalk.cyan("═════════════════════════════════════════════"));
+				console.log(chalk.yellow(`🔄 ROTATING TO NEW TOKEN: ${tokenB.symbol}`));
+				console.log(chalk.cyan("═════════════════════════════════════════════"));
+
+				// Reset iteration counter for the new token
+				cache.iteration = 0;
+			}
+		}
+
 		// Determine which strategy to use based on configuration
 		if(cache.config.tradingStrategy === "arbitrage") {
-			await arbitrageStrategy(jupiter,tokenA);
+			await arbitrageStrategy(jupiter,tokenA,tokenB);
 		} else {
 			console.log(chalk.red("Unknown or unsupported strategy: " + cache.config.tradingStrategy));
 		}
@@ -55,7 +94,7 @@ const watcher = async (jupiter,tokenA,tokenB) => {
 	}
 };
 
-const arbitrageStrategy = async (jupiter,tokenA) => {
+const arbitrageStrategy = async (jupiter,tokenA,tokenB) => {
 	cache.iteration++;
 	const date = new Date();
 	const i = cache.iteration;
@@ -85,7 +124,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 
 		// set input / output token
 		const inputToken = tokenA;
-		const outputToken = tokenA;
+		const outputToken = tokenB;
 
 		// check current routes
 		const performanceOfRouteCompStart = performance.now();
@@ -119,7 +158,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		const route = routes.routesInfos[0];
 
 		// calculate profitability
-		const simulatedProfit = calculateProfit(String(baseAmount), route.outAmount.toNumber());
+		const simulatedProfit = calculateProfit(String(baseAmount),safeToNumber(route.outAmount));
 
 		// randomize min perc profit threshold with 1% to avoid bot detection
 		const minPercProfitRnd = getRandomAmt(cache.config.minPercProfit);
@@ -231,7 +270,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 						console.log(chalk.red("TRADING DISABLED!"));
 						cache.hotkeys.r = false;
 					}
-					await successSwapHandler(tx,tradeEntry,tokenA,tokenA);
+					await successSwapHandler(tx,tradeEntry,tokenA,tokenB);
 				}
 			}
 		}
@@ -257,7 +296,51 @@ const run = async () => {
 
 		// set everything up
 		console.log(chalk.cyan("Setting up Jupiter client and wallet..."));
-		const {jupiter,tokenA,tokenB,wallet} = await setup();
+		let result = await setup();
+		let {jupiter,tokenA,tokenB,wallet} = result;
+
+		// Define a function for token rotation that can be called later
+		const rotateToken = async () => {
+			// Reset necessary state before switching tokens
+			cache.maxProfitSpotted = {
+				buy: 0,
+				sell: 0,
+			};
+
+			// Get the next token
+			const newTokenB = rotateToNextToken();
+
+			if(newTokenB) {
+				tokenB = newTokenB;
+				console.log(chalk.cyan("═════════════════════════════════════════════"));
+				console.log(chalk.yellow(`🔄 ROTATING TO NEW TOKEN: ${tokenB.symbol}`));
+				console.log(chalk.cyan("═════════════════════════════════════════════"));
+
+				// Reset iteration counter for the new token
+				cache.iteration = 0;
+
+				// Clear existing interval
+				if(global.botInterval) {
+					clearInterval(global.botInterval);
+				}
+
+				// Start new monitoring interval
+				global.botInterval = setInterval(
+					() => watcher(jupiter,tokenA,tokenB),
+					cache.config.minInterval
+				);
+			}
+		};
+
+		// Set rotation interval (e.g., every 5 minutes)
+		const rotationIntervalMinutes = process.env.TOKEN_ROTATION_INTERVAL_MINUTES || 5;
+		console.log(chalk.cyan(`Token rotation interval set to ${rotationIntervalMinutes} minutes`));
+
+		// Schedule token rotation
+		global.tokenRotationInterval = setInterval(
+			rotateToken,
+			rotationIntervalMinutes * 60 * 1000
+		);
 
 		console.log(chalk.yellow("═════════════════════════════════════════════"));
 		console.log(chalk.cyan("🚀 BOT INITIALIZED SUCCESSFULLY"));
@@ -305,6 +388,7 @@ const run = async () => {
 		console.log(chalk.cyan("\nStarting market monitor..."));
 		console.log(chalk.gray("- Update interval: ") + cache.config.minInterval + "ms");
 		console.log(chalk.gray("- Min profit threshold: ") + cache.config.minPercProfit + "%");
+		console.log(chalk.gray("- Token rotation interval: ") + rotationIntervalMinutes + " minutes");
 
 		console.log(chalk.yellow("\n═════════════════════════════════════════════"));
 		console.log(chalk.cyan("💻 MONITORING ACTIVE - PRESS [CTRL+C] TO EXIT"));
@@ -324,8 +408,13 @@ const run = async () => {
 	}
 };
 
+// Modify exit handler to also clean up rotation interval
+process.on("exit",() => {
+	if(global.tokenRotationInterval) {
+		clearInterval(global.tokenRotationInterval);
+	}
+	handleExit();
+});
+
 // Start the bot
 run();
-
-// handle exit
-process.on("exit",handleExit);

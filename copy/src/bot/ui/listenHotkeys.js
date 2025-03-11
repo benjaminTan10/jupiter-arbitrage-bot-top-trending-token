@@ -4,6 +4,7 @@ const open = require("open");
 const { DISCORD_INVITE_URL } = require("../../constants");
 const { logExit } = require("../exit");
 const cache = require("../cache");
+const { rotateToNextToken } = require("../setup");
 
 const listenHotkeys = () => {
 	keypress(process.stdin);
@@ -13,6 +14,7 @@ const listenHotkeys = () => {
 			cache.ui.allowClear = false;
 			// eslint-disable-next-line no-undef
 			if (global.botInterval) clearInterval(botInterval);
+			if (global.tokenRotationInterval) clearInterval(tokenRotationInterval);
 			logExit(0, { message: "[CTRL]+[C] exiting by user " });
 			process.exitCode = 0;
 			process.stdin.setRawMode(false);
@@ -27,6 +29,13 @@ const listenHotkeys = () => {
 		// [R] - revert back swap
 		if (key && key.name === "r") {
 			cache.hotkeys.r = true;
+		}
+		
+		// [N] - next token (manual rotation)
+		if (key && key.name === "n") {
+			console.log(chalk.magentaBright("[N] PRESSED - ROTATING TO NEXT TOKEN"));
+			// The actual rotation will be handled in index.js on the next cycle
+			cache.manualRotation = true;
 		}
 
 		// [P] - switch profit chart visibility

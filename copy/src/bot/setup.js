@@ -133,33 +133,41 @@ const setup = async () => {
 		cache.config.tokenA = {};
 		cache.config.tokenB = {};
 
-		// Set token A (default to WSOL if not set)
-		const mintAddress = process.env.MINT_ADDRESS || "So11111111111111111111111111111111111111112";
-
-		// Get token information
+		// Always use WSOL as tokenA
+		const WSOL_ADDRESS = "So11111111111111111111111111111111111111112";
 		let tokenA;
+
 		try {
+			// Get trending tokens list
 			const trendingTokens = await fetchTrendingTokens();
-			tokenA = trendingTokens[0];
+
+			// Find WSOL in the list
+			tokenA = trendingTokens.find(token => token.address === WSOL_ADDRESS);
 
 			if(!tokenA) {
-				// Fallback to WSOL if token not found
-				tokenA = trendingTokens.find(token => token.address === "So11111111111111111111111111111111111111112");
-
-				if(!tokenA) {
-					throw new Error("Could not find WSOL token as fallback");
-				}
-				console.log(chalk.yellow(`Using WSOL as fallback token.`));
+				// If WSOL is not in the list for some reason, create a default WSOL token object
+				tokenA = {
+					address: WSOL_ADDRESS,
+					symbol: "SOL",
+					name: "Wrapped SOL",
+					decimals: 9,
+					logoURI: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
+					tags: ["wrapped-solana"]
+				};
+				console.log(chalk.yellow("WSOL not found in token list, using default values."));
 			}
+
+			// Set up token rotation
+			await setupTokenRotation(trendingTokens);
+
 		} catch(error) {
-			console.error(chalk.red("Error fetching token information:"),error);
-			throw new Error("Failed to get token information");
+			console.error(chalk.red("Error setting up tokens:"),error);
+			throw new Error("Failed to set up tokens for rotation");
 		}
 
-		// Setup token B (USDC by default for value reference)
-		const tokenB = getUSDCToken();
+		// Get current tokenB from cache
+		const tokenB = cache.currentRotationToken || getUSDCToken();
 
-		// Log info about the tokens
 		console.log(chalk.green(
 			`Using tokens: ${tokenA.symbol} (${tokenA.address.slice(0,6)}...) and ${tokenB.symbol} (${tokenB.address.slice(0,6)}...)`
 		));
@@ -340,9 +348,101 @@ const getInitialotherAmountThreshold = async (
 	}
 };
 
+/**
+ * Set up token rotation system
+ * @param {Array} tokenList - List of all available tokens
+ */
+const setupTokenRotation = async (tokenList) => {
+	try {
+		// Filter out WSOL from token list (since we're always using it as tokenA)
+		const filteredTokens = tokenList.filter(token =>
+			token.address !== "So11111111111111111111111111111111111111112" &&
+			token.daily_volume > 10000 // Only tokens with decent volume
+		);
+
+		// Sort by volume for better opportunities
+		filteredTokens.sort((a,b) => (b.daily_volume || 0) - (a.daily_volume || 0));
+
+		// Store token rotation list in cache
+		cache.tokenRotationList = filteredTokens;
+
+		// Get current index from temp file if it exists
+		let currentIndex = 0;
+		const indexFilePath = './temp/current_token_index.json';
+
+		if(fs.existsSync(indexFilePath)) {
+			try {
+				const data = JSON.parse(fs.readFileSync(indexFilePath,'utf8'));
+				currentIndex = data.index || 0;
+			} catch(error) {
+				console.warn(chalk.yellow("Could not read token rotation index, starting from 0"));
+			}
+		}
+
+		// Make sure the index is valid
+		if(currentIndex >= filteredTokens.length) {
+			currentIndex = 0;
+		}
+
+		// Set current token
+		cache.currentRotationToken = filteredTokens[currentIndex];
+		cache.currentRotationIndex = currentIndex;
+
+		// Save to file
+		fs.writeFileSync(indexFilePath,JSON.stringify({
+			index: currentIndex,
+			timestamp: new Date().toISOString(),
+			currentToken: cache.currentRotationToken.symbol
+		},null,2));
+
+		console.log(chalk.cyan(`Token rotation setup complete. Using ${filteredTokens.length} tokens.`));
+		console.log(chalk.cyan(`Current token (#${currentIndex + 1}): ${cache.currentRotationToken.symbol}`));
+
+	} catch(error) {
+		console.error(chalk.red("Error setting up token rotation:"),error);
+		// Fall back to USDC if there's an issue
+		cache.currentRotationToken = getUSDCToken();
+	}
+};
+
+/**
+ * Rotate to the next token
+ */
+const rotateToNextToken = () => {
+	try {
+		if(!cache.tokenRotationList || cache.tokenRotationList.length === 0) {
+			console.warn(chalk.yellow("No token rotation list available. Staying with current token."));
+			return;
+		}
+
+		// Increment index
+		let nextIndex = (cache.currentRotationIndex + 1) % cache.tokenRotationList.length;
+
+		// Set the next token
+		cache.currentRotationToken = cache.tokenRotationList[nextIndex];
+		cache.currentRotationIndex = nextIndex;
+
+		// Save to file
+		const indexFilePath = './temp/current_token_index.json';
+		fs.writeFileSync(indexFilePath,JSON.stringify({
+			index: nextIndex,
+			timestamp: new Date().toISOString(),
+			currentToken: cache.currentRotationToken.symbol
+		},null,2));
+
+		console.log(chalk.green(`Rotated to next token (#${nextIndex + 1}): ${cache.currentRotationToken.symbol}`));
+
+		return cache.currentRotationToken;
+	} catch(error) {
+		console.error(chalk.red("Error rotating to next token:"),error);
+		return null;
+	}
+};
+
 module.exports = {
 	setup,
 	getInitialotherAmountThreshold,
 	balanceCheck,
 	checkTokenABalance,
+	rotateToNextToken,
 };

@@ -31,11 +31,21 @@ function printToConsole({
 			console.log(`${chalk.gray("Trading Enabled:")} ${cache.tradingEnabled ? chalk.green("YES") : chalk.red("NO")}`);
 			console.log(`${chalk.gray("Wallet:")} ${cache.walletpubkey || "unknown"}`);
 			
+			// Token rotation information
+			console.log(chalk.bold.yellow("\n🔄 TOKEN ROTATION:"));
+			console.log(`${chalk.gray("Current Token:")} ${chalk.cyan(tokenB.symbol)} (#${cache.currentRotationIndex + 1} of ${cache.tokenRotationList?.length || 0})`);
+			console.log(`${chalk.gray("Next Rotation:")} ${chalk.cyan(new Date(
+			  Date.now() + ((process.env.TOKEN_ROTATION_INTERVAL_MINUTES || 5) * 60 * 1000) - (Date.now() % 60000)
+			).toLocaleTimeString())}`);
+			
 			// Token information
 			console.log(chalk.bold.yellow("\n💰 TOKEN DETAILS:"));
 			console.log(`${chalk.gray("Token A:")} ${chalk.cyan(tokenA.symbol)} (${chalk.gray(tokenA.address.substring(0, 6) + '...' + tokenA.address.substring(tokenA.address.length - 4))})`);
 			if (tokenB && tokenB.symbol) {
 				console.log(`${chalk.gray("Token B:")} ${chalk.cyan(tokenB.symbol)} (${chalk.gray(tokenB.address.substring(0, 6) + '...' + tokenB.address.substring(tokenB.address.length - 4))})`);
+				if (tokenB.daily_volume) {
+					console.log(`${chalk.gray("Daily Volume:")} ${chalk.green("$" + (tokenB.daily_volume || 0).toLocaleString())}`);
+				}
 			}
 			
 			// Current trade/route information
