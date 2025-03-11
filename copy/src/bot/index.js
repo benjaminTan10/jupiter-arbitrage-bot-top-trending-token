@@ -78,7 +78,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 
 		//BNI AMT to TRADE
 		const amountInBN = new BN(amountToTrade);
-		console.log(chalk.gray('Checking routes for amount:') + toDecimal(amountToTrade, tokenA.decimals) + ' ' + tokenA.symbol);
+		console.log(chalk.gray('Checking routes for amount:') + toDecimal(amountToTrade,tokenA.decimals) + ' ' + tokenA.symbol);
 
 		// default slippage
 		const slippage = typeof cache.config.slippage === "number" ? cache.config.slippage : 1; // 100 is 0.1%
@@ -119,7 +119,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		const route = routes.routesInfos[0];
 
 		// calculate profitability
-		const simulatedProfit = calculateProfit(String(baseAmount),await BN.toNumber(route.outAmount));
+		const simulatedProfit = calculateProfit(String(baseAmount), route.outAmount.toNumber());
 
 		// randomize min perc profit threshold with 1% to avoid bot detection
 		const minPercProfitRnd = getRandomAmt(cache.config.minPercProfit);
