@@ -3,7 +3,7 @@ console.clear();
 require("dotenv").config();
 const {clearInterval} = require("timers");
 const {PublicKey} = require("@solana/web3.js");
-const JSBI = require('jsbi');
+const BN = require('bn.js');
 const {setTimeout} = require("timers/promises");
 const {
 	calculateProfit,
@@ -77,7 +77,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		const baseAmount = amountToTrade;
 
 		//BNI AMT to TRADE
-		const amountInJSBI = JSBI.BigInt(amountToTrade);
+		const amountInBN = new BN(amountToTrade);
 		console.log(chalk.gray('Checking routes for amount:') + toDecimal(amountToTrade, tokenA.decimals) + ' ' + tokenA.symbol);
 
 		// default slippage

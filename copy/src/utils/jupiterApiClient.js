@@ -2,7 +2,6 @@ const {createJupiterApiClient} = require('@jup-ag/api');
 const {Connection,Keypair,PublicKey,Transaction,VersionedTransaction,SendOptions} = require('@solana/web3.js');
 const bs58 = require('bs58');
 const chalk = require('chalk');
-const JSBI = require('jsbi');
 const ora = require('ora-classic');
 const axios = require('axios');
 

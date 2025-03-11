@@ -3,7 +3,6 @@ const chalk = require("chalk");
 const ora = require("ora-classic");
 const bs58 = require("bs58");
 const {Connection,Keypair,PublicKey,LAMPORTS_PER_SOL} = require("@solana/web3.js");
-const JSBI = require('jsbi');
 
 const {logExit} = require("./exit");
 const {toDecimal,createTempDir} = require("../utils");

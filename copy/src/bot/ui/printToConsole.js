@@ -1,7 +1,6 @@
 const chalk = require("chalk");
 const moment = require("moment");
 const chart = require("asciichart");
-const JSBI = require('jsbi');
 
 const { toDecimal } = require("../../utils");
 const cache = require("../cache");

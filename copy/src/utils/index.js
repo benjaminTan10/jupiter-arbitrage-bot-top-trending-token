@@ -2,7 +2,6 @@ const chalk = require("chalk");
 const fs = require("fs");
 const ora = require("ora-classic");
 const {logExit} = require("../bot/exit");
-const JSBI = require('jsbi');
 const bs58 = require("bs58");
 const {PublicKey,Connection,Keypair,LAMPORTS_PER_SOL} = require("@solana/web3.js");
 require("dotenv").config();
