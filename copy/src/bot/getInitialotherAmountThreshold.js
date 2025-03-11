@@ -16,7 +16,7 @@ const getInitialotherAmountThreshold = async (
         }).start();
 
         //JSBI AMT to TRADE
-        const amountInJSBI = JSBI.BigInt(amountToTrade);
+        const amountInBN = new BN(amountToTrade);
 
         // compute routes with safer options
         const routes = await jupiter.computeRoutes({

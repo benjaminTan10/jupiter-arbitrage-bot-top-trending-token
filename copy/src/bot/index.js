@@ -98,7 +98,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		const routes = await jupiter.computeRoutes({
 			inputMint: new PublicKey(inputToken.address),
 			outputMint: new PublicKey(outputToken.address),
-			amount: amountInJSBI,
+			amount: amountInBN,
 			slippageBps: slippage,
 			forceFetch: true,
 			onlyDirectRoutes: false,
@@ -119,7 +119,7 @@ const arbitrageStrategy = async (jupiter,tokenA) => {
 		const route = routes.routesInfos[0];
 
 		// calculate profitability
-		const simulatedProfit = calculateProfit(String(baseAmount),await JSBI.toNumber(route.outAmount));
+		const simulatedProfit = calculateProfit(String(baseAmount),await BN.toNumber(route.outAmount));
 
 		// randomize min perc profit threshold with 1% to avoid bot detection
 		const minPercProfitRnd = getRandomAmt(cache.config.minPercProfit);

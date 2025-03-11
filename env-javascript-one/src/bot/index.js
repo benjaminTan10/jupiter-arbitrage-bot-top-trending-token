@@ -62,7 +62,7 @@ const pingpongStrategy = async (jupiter, tokenA, tokenB) => {
 		const inputToken = cache.sideBuy ? tokenA : tokenB;
 		const outputToken = cache.sideBuy ? tokenB : tokenA;
 		const tokdecimals = cache.sideBuy ? inputToken.decimals : outputToken.decimals;
-		const amountInJSBI = JSBI.BigInt(amountToTrade);
+		const amountInBN = new BN(amountToTrade);
 
 		// check current routes via JUP4 SDK
 		const performanceOfRouteCompStart = performance.now();
@@ -265,7 +265,7 @@ const arbitrageStrategy = async (jupiter, tokenA) => {
 		const baseAmount = amountToTrade;
 
         //BNI AMT to TRADE
-        const amountInJSBI = JSBI.BigInt(amountToTrade);
+        const amountInBN = new BN(amountToTrade);
         //console.log('Amount to trade:'+amountToTrade);
 
 		// default slippage
