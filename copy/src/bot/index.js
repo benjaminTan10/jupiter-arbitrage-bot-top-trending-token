@@ -59,11 +59,50 @@ const safeToNumber = (value) => {
 
 // Function to watch for arbitrage opportunities
 const watcher = async (jupiter,tokenA,tokenB) => {
+	// Check if we've hit the rate limit
+	if(cache.rateLimiter.isRateLimited) {
+		console.log(chalk.yellow("Rate limit cooldown active, skipping this iteration..."));
+		return;
+	}
+
 	console.log(chalk.cyan('═════════════════════════════════════════════'));
 	console.log(chalk.yellow(`🔍 CHECKING MARKET: ${tokenA.symbol} ↔ ${tokenB.symbol}`));
 	console.log(chalk.cyan('═════════════════════════════════════════════'));
 
 	try {
+		// Track API request for rate limiting
+		cache.rateLimiter.requestCount++;
+
+		// Check if we're approaching the rate limit and adjust delay if needed
+		if(cache.rateLimiter.requestCount >= 45) { // Start being cautious at 45 requests
+			const timeSinceReset = Date.now() - cache.rateLimiter.lastResetTime;
+			const timeRemaining = 60000 - timeSinceReset;
+
+			if(timeRemaining > 0) {
+				// If we're close to the 60 req/min limit, increase delay
+				const newDelay = Math.ceil(timeRemaining / (60 - cache.rateLimiter.requestCount));
+				cache.rateLimiter.currentDelay = Math.max(cache.config.minInterval,newDelay);
+
+				// Reset the interval with the new delay if needed
+				if(global.botInterval && newDelay > cache.config.minInterval) {
+					clearInterval(global.botInterval);
+					global.botInterval = setInterval(
+						() => watcher(jupiter,tokenA,tokenB),
+						cache.rateLimiter.currentDelay
+					);
+					console.log(chalk.yellow(`Adjusted request interval to ${cache.rateLimiter.currentDelay}ms to avoid rate limits`));
+				}
+			}
+
+			// Reset counters if a minute has passed
+			if(timeSinceReset >= 60000) {
+				cache.rateLimiter.requestCount = 1;
+				cache.rateLimiter.lastResetTime = Date.now();
+				cache.rateLimiter.currentDelay = cache.config.minInterval;
+				console.log(chalk.green("Rate limit window reset"));
+			}
+		}
+
 		// Check for manual rotation request
 		if(cache.manualRotation) {
 			console.log(chalk.magentaBright("Manual token rotation requested..."));
@@ -80,6 +119,10 @@ const watcher = async (jupiter,tokenA,tokenB) => {
 
 				// Reset iteration counter for the new token
 				cache.iteration = 0;
+
+				// Reset rate limiting counters when manually changing tokens
+				cache.rateLimiter.requestCount = 0;
+				cache.rateLimiter.lastResetTime = Date.now();
 			}
 		}
 
@@ -91,6 +134,32 @@ const watcher = async (jupiter,tokenA,tokenB) => {
 		}
 	} catch(error) {
 		console.error(chalk.red("Error in watcher:"),error);
+
+		// Check for rate limit errors and handle them
+		if(error.message?.includes("429") || error.response?.status === 429) {
+			console.log(chalk.red("Rate limit hit! Implementing backoff..."));
+
+			// Implement a backoff strategy
+			cache.rateLimiter.isRateLimited = true;
+			cache.rateLimiter.currentDelay = Math.min(cache.rateLimiter.currentDelay * 2,10000); // Max 10s
+
+			// Reset the interval with the new delay
+			if(global.botInterval) {
+				clearInterval(global.botInterval);
+				setTimeout(() => {
+					cache.rateLimiter.isRateLimited = false;
+					cache.rateLimiter.requestCount = 0;
+					cache.rateLimiter.lastResetTime = Date.now();
+
+					global.botInterval = setInterval(
+						() => watcher(jupiter,tokenA,tokenB),
+						cache.rateLimiter.currentDelay
+					);
+
+					console.log(chalk.green(`Resuming after rate limit with ${cache.rateLimiter.currentDelay}ms interval`));
+				},30000); // Wait 30s before resuming after a rate limit error
+			}
+		}
 	}
 };
 
@@ -319,28 +388,38 @@ const run = async () => {
 				// Reset iteration counter for the new token
 				cache.iteration = 0;
 
+				// Reset rate limiting counters when changing tokens
+				cache.rateLimiter.requestCount = 0;
+				cache.rateLimiter.lastResetTime = Date.now();
+
 				// Clear existing interval
 				if(global.botInterval) {
 					clearInterval(global.botInterval);
 				}
 
-				// Start new monitoring interval
+				// Start new monitoring interval with proper rate limiting
 				global.botInterval = setInterval(
 					() => watcher(jupiter,tokenA,tokenB),
-					cache.config.minInterval
+					Math.max(cache.config.minInterval,cache.rateLimiter.currentDelay)
 				);
 			}
 		};
 
-		// Set rotation interval (e.g., every 5 minutes)
-		const rotationIntervalMinutes = process.env.TOKEN_ROTATION_INTERVAL_MINUTES || 5;
+		// Set rotation interval (longer to reduce API pressure)
+		const rotationIntervalMinutes = parseInt(process.env.TOKEN_ROTATION_INTERVAL_MINUTES || 5);
 		console.log(chalk.cyan(`Token rotation interval set to ${rotationIntervalMinutes} minutes`));
 
-		// Schedule token rotation
+		// Schedule token rotation with a longer interval
 		global.tokenRotationInterval = setInterval(
 			rotateToken,
 			rotationIntervalMinutes * 60 * 1000
 		);
+
+		// Use a higher min interval to avoid rate limiting
+		cache.config.minInterval = Math.max(
+			parseInt(process.env.MIN_INTERVAL_MS) || 3000,
+			3000
+		); // Ensure at least 3s between calls
 
 		console.log(chalk.yellow("═════════════════════════════════════════════"));
 		console.log(chalk.cyan("🚀 BOT INITIALIZED SUCCESSFULLY"));
@@ -394,7 +473,7 @@ const run = async () => {
 		console.log(chalk.cyan("💻 MONITORING ACTIVE - PRESS [CTRL+C] TO EXIT"));
 		console.log(chalk.yellow("═════════════════════════════════════════════"));
 
-		// Start the watcher with an interval
+		// Start the watcher with a proper rate-limited interval
 		global.botInterval = setInterval(
 			() => watcher(jupiter,tokenA,tokenB),
 			cache.config.minInterval

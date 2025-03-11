@@ -1,5 +1,6 @@
 const keypress = require("keypress");
 const open = require("open");
+const chalk = require("chalk");
 
 const { DISCORD_INVITE_URL } = require("../../constants");
 const { logExit } = require("../exit");

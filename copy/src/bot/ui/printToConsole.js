@@ -31,6 +31,13 @@ function printToConsole({
 			console.log(`${chalk.gray("Trading Enabled:")} ${cache.tradingEnabled ? chalk.green("YES") : chalk.red("NO")}`);
 			console.log(`${chalk.gray("Wallet:")} ${cache.walletpubkey || "unknown"}`);
 			
+			// API rate limit information
+			console.log(chalk.bold.yellow("\n🔄 API STATUS:"));
+			console.log(`${chalk.gray("Rate Limit Status:")} ${cache.rateLimiter.isRateLimited ? 
+				chalk.red("COOLING DOWN") : chalk.green("NORMAL")}`);
+			console.log(`${chalk.gray("Request Count:")} ${cache.rateLimiter.requestCount}/${cache.rateLimiter.maxRequestsPerMinute} per minute`);
+			console.log(`${chalk.gray("Current Delay:")} ${chalk.cyan(cache.rateLimiter.currentDelay)}ms`);
+			
 			// Token rotation information
 			console.log(chalk.bold.yellow("\n🔄 TOKEN ROTATION:"));
 			console.log(`${chalk.gray("Current Token:")} ${chalk.cyan(tokenB.symbol)} (#${cache.currentRotationIndex + 1} of ${cache.tokenRotationList?.length || 0})`);

@@ -87,10 +87,19 @@ const cache = {
 	currentRotationToken: null,
 	currentRotationIndex: 0,
 	
+	// Rate limiting configuration
+	rateLimiter: {
+		requestCount: 0,
+		lastResetTime: Date.now(),
+		isRateLimited: false,
+		currentDelay: parseInt(process.env.MIN_INTERVAL_MS) || 3000, // Start with a safe default
+		maxRequestsPerMinute: 55, // Keep below Jupiter's 60/min limit
+	},
+	
 	config: {
 		// Default configuration that will be replaced during setup
 		rpc: [process.env.DEFAULT_RPC || ""],
-		minInterval: parseInt(process.env.MIN_INTERVAL_MS) || 100,
+		minInterval: parseInt(process.env.MIN_INTERVAL_MS) || 3000, // Increase default to 3s
 		slippage: parseInt(process.env.MAX_SLIPPAGE_PERCENT * 100) || 100,
 		priority: parseInt(process.env.PRIORITY) || 100,
 		minPercProfit: parseFloat(process.env.MIN_PROFIT_THRESHOLD) || 0.5,

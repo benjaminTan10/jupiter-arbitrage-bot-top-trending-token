@@ -8,6 +8,10 @@ const axios = require('axios');
 // Configure Jupiter API client
 const jupiterQuoteApi = createJupiterApiClient();
 
+// Add this near the top of the file
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000;
+
 // Direct fetch function as fallback when client fails
 const fetchQuoteDirectly = async (inputMint,outputMint,amount,slippageBps) => {
     try {
@@ -15,16 +19,33 @@ const fetchQuoteDirectly = async (inputMint,outputMint,amount,slippageBps) => {
 
         const url = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}&onlyDirectRoutes=false`;
 
-        const response = await axios.get(url);
+        const response = await axios.get(url, {
+            timeout: 10000, // 10s timeout
+            headers: {
+                'Cache-Control': 'no-cache'
+            }
+        });
         return response.data;
     } catch(error) {
-        console.error(chalk.red('Direct API quote error:'),error.response?.data || error.message);
+        // Handle rate limiting specially
+        if (error.response?.status === 429) {
+            console.error(chalk.red('Direct API rate limit hit:'), error.response?.data || error.message);
+            
+            // Wait before retrying if we want to
+            // await new Promise(resolve => setTimeout(resolve, 5000));
+            // return await fetchQuoteDirectly(inputMint, outputMint, amount, slippageBps);
+            
+            // Or just propagate the error so our main rate limiting can handle it
+            throw error;
+        }
+        
+        console.error(chalk.red('Direct API quote error:'), error.response?.data || error.message);
         throw error;
     }
 };
 
 /**
- * Get a quote for swapping tokens
+ * Get a quote for swapping tokens with rate limit handling
  * @param {string} inputMint - The mint address of the input token
  * @param {string} outputMint - The mint address of the output token
  * @param {number|string} amount - The amount of input token (in the smallest unit)
@@ -32,105 +53,53 @@ const fetchQuoteDirectly = async (inputMint,outputMint,amount,slippageBps) => {
  * @returns {Promise<Object>} - Quote information
  */
 const getQuote = async (inputMint,outputMint,amount,slippageBps = 100) => {
-    try {
-        // Convert amount to string if it's not already
-        const amountStr = amount.toString();
-
-        console.log(chalk.cyan(`Fetching quote: ${inputMint.substring(0,6)}... → ${outputMint.substring(0,6)}... Amount: ${amountStr}`));
-
-        let quoteResponse;
-        // First try with the Jupiter API client
+    let retries = 0;
+    
+    const attemptQuote = async () => {
         try {
-            quoteResponse = await jupiterQuoteApi.quoteGet({
-                inputMint,
-                outputMint,
-                amount: amountStr,
-                slippageBps,
-                onlyDirectRoutes: false,
-                restrictIntermediateTokens: true, // This is important for stability
-            });
-        } catch(clientError) {
-            console.log(chalk.yellow(`Jupiter client API failed, trying direct API call: ${clientError.message}`));
+            // Convert amount to string if it's not already
+            const amountStr = amount.toString();
 
-            // If same token (arbitrage), try fetching with an intermediate token (USDC)
-            if(inputMint === outputMint) {
-                console.log(chalk.cyan("Using intermediate token for same-token arbitrage"));
-                // USDC address
-                const usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+            console.log(chalk.cyan(`Fetching quote: ${inputMint.substring(0,6)}... → ${outputMint.substring(0,6)}... Amount: ${amountStr}`));
 
-                // Get quote for input → USDC
-                const firstLegQuote = await fetchQuoteDirectly(inputMint,usdcMint,amountStr,slippageBps);
-
-                if(!firstLegQuote || !firstLegQuote.outAmount) {
-                    throw new Error("Failed to get first leg quote (token → USDC)");
-                }
-
-                // Get quote for USDC → output
-                const secondLegQuote = await fetchQuoteDirectly(usdcMint,outputMint,firstLegQuote.outAmount,slippageBps);
-
-                if(!secondLegQuote || !secondLegQuote.outAmount) {
-                    throw new Error("Failed to get second leg quote (USDC → token)");
-                }
-
-                // Create a combined quote
-                quoteResponse = {
+            let quoteResponse;
+            // First try with the Jupiter API client
+            try {
+                quoteResponse = await jupiterQuoteApi.quoteGet({
                     inputMint,
-                    inAmount: amountStr,
                     outputMint,
-                    outAmount: secondLegQuote.outAmount,
-                    otherAmountThreshold: secondLegQuote.otherAmountThreshold,
-                    swapMode: "ExactIn",
-                    slippageBps,
-                    priceImpactPct: (parseFloat(firstLegQuote.priceImpactPct || "0") +
-                        parseFloat(secondLegQuote.priceImpactPct || "0")).toString(),
-                    routePlan: [
-                        ...(firstLegQuote.routePlan || []),
-                        ...(secondLegQuote.routePlan || [])
-                    ]
-                };
-            } else {
-                // For different tokens, just try direct API call
-                quoteResponse = await fetchQuoteDirectly(inputMint,outputMint,amountStr,slippageBps);
-            }
-        }
-
-        if(quoteResponse) {
-            const inAmount = quoteResponse.inAmount;
-            const outAmount = quoteResponse.outAmount;
-            const priceImpact = (parseFloat(quoteResponse.priceImpactPct) * 100).toFixed(4);
-
-            console.log(chalk.green(`Quote received: In: ${inAmount}, Out: ${outAmount}, Impact: ${priceImpact}%`));
-
-            // Calculate profit for arbitrage (if same token)
-            if(inputMint === outputMint) {
-                const startAmount = BigInt(inAmount);
-                const endAmount = BigInt(outAmount);
-                const profitAmount = endAmount > startAmount ? endAmount - startAmount : BigInt(0);
-                const profitPercentage = startAmount > 0 ?
-                    Number(profitAmount * BigInt(10000) / startAmount) / 100 : 0;
-
-                if(profitPercentage > 0) {
-                    console.log(chalk.green(`✅ ARBITRAGE OPPORTUNITY: ${profitPercentage.toFixed(4)}% profit`));
-                } else {
-                    console.log(chalk.red(`❌ No arbitrage opportunity: ${profitPercentage.toFixed(4)}% (negative or zero profit)`));
-                }
-            }
-
-            // Log route plan if available
-            if(quoteResponse.routePlan && quoteResponse.routePlan.length > 0) {
-                console.log(chalk.yellow('Route plan:'));
-                quoteResponse.routePlan.forEach((step,idx) => {
-                    const ammName = step.swapInfo?.label || 'Unknown';
-                    console.log(chalk.gray(`  ${idx + 1}. ${ammName} - In: ${step.swapInfo?.inAmount || 'unknown'} → Out: ${step.swapInfo?.outAmount || 'unknown'}`));
+                    amount: amountStr,
+                    slippageBps
                 });
+                return quoteResponse;
+            } catch (error) {
+                console.log(chalk.yellow("Jupiter API client error, trying direct fetch:"), error.message);
+                
+                // Check for rate limit error
+                if (error.response?.status === 429 || error.message?.includes('429')) {
+                    console.log(chalk.red("Rate limit encountered. Implementing backoff..."));
+                    
+                    if (retries < MAX_RETRIES) {
+                        const backoffTime = RETRY_DELAY * Math.pow(2, retries);
+                        console.log(chalk.yellow(`Waiting ${backoffTime/1000}s before retry #${retries+1}...`));
+                        await new Promise(resolve => setTimeout(resolve, backoffTime));
+                        retries++;
+                        return await attemptQuote(); // Retry recursively
+                    } else {
+                        throw new Error("Rate limit exceeded after maximum retries");
+                    }
+                }
+                
+                // Try direct fetch as fallback for other errors
+                return await fetchQuoteDirectly(inputMint, outputMint, amountStr, slippageBps);
             }
+        } catch (error) {
+            console.error(chalk.red("Error getting Jupiter quote:"), error.message);
+            throw error;
         }
-
-        return quoteResponse;
-    } catch(error) {
-        console.error(chalk.red('Error getting Jupiter quote:'),error.message);
-        throw error;
-    }
+    };
+    
+    return await attemptQuote();
 };
 
 /**
